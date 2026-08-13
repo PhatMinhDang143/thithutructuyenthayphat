@@ -28,19 +28,21 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
   // Strictly filter exams based on student's assigned class group
   const isExamAllowed = (cfg: ExamQuestionsConfig, userGroup: string): boolean => {
-    if (!cfg.target_group || cfg.target_group.trim() === '') return true; // If unspecified, open to all
-    const target = cfg.target_group.toLowerCase();
+    if (!cfg || !cfg.target_group || cfg.target_group.trim() === '') return true; // If unspecified, open to all
+    const target = String(cfg.target_group).toLowerCase();
     if (target.includes('tất cả') || target.includes('all')) return true;
 
-    if (!userGroup || userGroup === 'Khách' || userGroup === 'guest') {
+    const groupStr = String(userGroup || 'Khách').toLowerCase().trim();
+    if (!groupStr || groupStr === 'khách' || groupStr === 'guest') {
       return false; // Guest only sees exams marked for 'Tất cả'
     }
 
-    const allowedClasses = cfg.target_group.split(',').map((c) => c.trim().toLowerCase());
-    return allowedClasses.includes(userGroup.toLowerCase()) || target.includes(userGroup.toLowerCase());
+    const allowedClasses = String(cfg.target_group).split(',').map((c) => c.trim().toLowerCase());
+    return allowedClasses.includes(groupStr) || target.includes(groupStr);
   };
 
-  const visibleExams = exams.filter((ex) => isExamAllowed(ex.questions || {}, user.group));
+  const safeExams = Array.isArray(exams) ? exams : [];
+  const visibleExams = safeExams.filter((ex) => ex && isExamAllowed(ex.questions || {}, user?.group || 'Khách'));
 
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-8 min-h-[calc(100vh-80px)] flex flex-col justify-between">

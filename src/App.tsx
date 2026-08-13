@@ -154,11 +154,23 @@ export default function App() {
           <AuthView
             studentsMap={students}
             onLoginSuccess={(usr) => {
-              setCurrentUser(usr);
-              if (usr.role === 'teacher') {
+              // Validate user object
+              const validRole = usr.role === 'teacher' ? 'teacher' : usr.role === 'guest' ? 'guest' : 'student';
+              const cleanUser: AppUser = {
+                username: String(usr.username || '').trim(),
+                name: String(usr.name || usr.username || 'Học sinh').trim(),
+                group: String(usr.group || 'Chưa phân lớp').trim(),
+                role: validRole,
+              };
+
+              setCurrentUser(cleanUser);
+              if (validRole === 'teacher') {
                 setTeacherSubView('dashboard');
               } else {
+                // Strictly set student flow to lobby view upon login
                 setStudentSubView('lobby');
+                setSelectedExam(null);
+                setResultData(null);
               }
             }}
             onEnterAsGuest={() => {
@@ -169,6 +181,8 @@ export default function App() {
                 group: 'Khách',
               });
               setStudentSubView('lobby');
+              setSelectedExam(null);
+              setResultData(null);
             }}
           />
         )}
@@ -268,30 +282,31 @@ export default function App() {
         {/* 3. LOGGED IN AS STUDENT / GUEST */}
         {currentUser && (currentUser.role === 'student' || currentUser.role === 'guest') && (
           <div className="w-full">
-            {studentSubView === 'lobby' && (
+            {studentSubView === 'exam' && selectedExam ? (
+              <ExamView user={currentUser} exam={selectedExam} onExamSubmit={handleExamSubmit} />
+            ) : studentSubView === 'result' && selectedExam && resultData ? (
+              <ResultView
+                user={currentUser}
+                exam={selectedExam}
+                resultData={resultData}
+                leaderboard={leaderboard}
+                onBackToLobby={() => {
+                  setSelectedExam(null);
+                  setResultData(null);
+                  setStudentSubView('lobby');
+                }}
+              />
+            ) : (
+              // Default fallback: Always render LobbyView if not in active exam or result view
               <LobbyView
                 user={currentUser}
-                exams={exams}
+                exams={exams || []}
                 loading={loading}
                 onLogout={handleLogout}
                 onSelectExam={(ex) => {
                   setSelectedExam(ex);
                   setStudentSubView('exam');
                 }}
-              />
-            )}
-
-            {studentSubView === 'exam' && selectedExam && (
-              <ExamView user={currentUser} exam={selectedExam} onExamSubmit={handleExamSubmit} />
-            )}
-
-            {studentSubView === 'result' && selectedExam && resultData && (
-              <ResultView
-                user={currentUser}
-                exam={selectedExam}
-                resultData={resultData}
-                leaderboard={leaderboard}
-                onBackToLobby={() => setStudentSubView('lobby')}
               />
             )}
           </div>

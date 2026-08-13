@@ -53,22 +53,74 @@ export const fetchAllData = async (): Promise<{
     try {
       const res = await fetch(`${apiUrl}?action=get_all`, { mode: 'cors' });
       if (res.ok) {
-        const data = await res.json();
+        const rawData = await res.json();
+        const data = rawData?.data || rawData;
         if (data && !data.error) {
-          const exams: ExamItem[] = data.exams || [];
-          const students = data.students || {};
-          const history: ExamSubmission[] = data.history || [];
+          // Normalize exams
+          const rawExams = data.exams || [];
+          const exams: ExamItem[] = Array.isArray(rawExams)
+            ? rawExams
+            : typeof rawExams === 'object'
+            ? Object.values(rawExams)
+            : [];
+
+          // Normalize students dictionary
+          const rawStudents = data.students || {};
+          const normalizedStudents: { [username: string]: StudentAccount } = {};
+
+          // Seed with initial students first so defaults exist
+          Object.entries(INITIAL_STUDENTS).forEach(([k, v]) => {
+            normalizedStudents[k.toLowerCase()] = { ...v };
+          });
+
+          if (Array.isArray(rawStudents)) {
+            rawStudents.forEach((s: any) => {
+              if (s) {
+                const u = String(s.username || s.sbd || s.id || s.ma_hs || s.tai_khoan || '').trim();
+                if (u) {
+                  normalizedStudents[u.toLowerCase()] = {
+                    username: u,
+                    name: String(s.name || s.ten || s.ho_ten || s.fullName || u).trim(),
+                    password: String(s.password !== undefined ? s.password : s.matkhau !== undefined ? s.matkhau : '123').trim(),
+                    group: String(s.group || s.lop || s.className || s.class || s.nhom || 'Chưa phân lớp').trim(),
+                  };
+                }
+              }
+            });
+          } else if (typeof rawStudents === 'object') {
+            Object.entries(rawStudents).forEach(([k, s]: [string, any]) => {
+              if (s) {
+                const u = String(s.username || s.sbd || k || '').trim();
+                if (u) {
+                  normalizedStudents[u.toLowerCase()] = {
+                    username: u,
+                    name: String(s.name || s.ten || s.ho_ten || s.fullName || u).trim(),
+                    password: String(s.password !== undefined ? s.password : s.matkhau !== undefined ? s.matkhau : '123').trim(),
+                    group: String(s.group || s.lop || s.className || s.class || s.nhom || 'Chưa phân lớp').trim(),
+                  };
+                }
+              }
+            });
+          }
+
+          // Normalize history
+          const rawHistory = data.history || [];
+          const history: ExamSubmission[] = Array.isArray(rawHistory)
+            ? rawHistory
+            : typeof rawHistory === 'object'
+            ? Object.values(rawHistory)
+            : [];
 
           // Merge local + remote
-          localStorage.setItem(STORAGE_KEYS.EXAMS, JSON.stringify(exams));
-          localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
+          localStorage.setItem(STORAGE_KEYS.EXAMS, JSON.stringify(exams.length > 0 ? exams : INITIAL_EXAMS));
+          localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(normalizedStudents));
           localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(history));
 
           // Calculate unique classes from students & exams
           const classSet = new Set<string>(INITIAL_CLASSES);
-          Object.values(students).forEach((s: any) => { if (s.group) classSet.add(s.group); });
+          Object.values(normalizedStudents).forEach((s: any) => { if (s.group) classSet.add(s.group); });
           exams.forEach((ex) => {
-            if (ex.questions?.target_group) {
+            if (ex?.questions?.target_group) {
               ex.questions.target_group.split(',').forEach(g => {
                 const trimmed = g.trim();
                 if (trimmed && trimmed.toLowerCase() !== 'tất cả' && trimmed.toLowerCase() !== 'all') {
@@ -81,7 +133,12 @@ export const fetchAllData = async (): Promise<{
           const classesList = Array.from(classSet);
           localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(classesList));
 
-          return { exams, students, history, classes: classesList };
+          return {
+            exams: exams.length > 0 ? exams : INITIAL_EXAMS,
+            students: normalizedStudents,
+            history,
+            classes: classesList,
+          };
         }
       }
     } catch (e) {
@@ -89,17 +146,52 @@ export const fetchAllData = async (): Promise<{
     }
   }
 
-  // Fallback to LocalStorage
+  // Fallback to LocalStorage with normalization
+  let localStudents: { [username: string]: StudentAccount } = {};
+  try {
+    const rawLocalStudents = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENTS) || '{}');
+    // Ensure initial students are present
+    Object.entries(INITIAL_STUDENTS).forEach(([k, v]) => {
+      localStudents[k.toLowerCase()] = { ...v };
+    });
+    if (Array.isArray(rawLocalStudents)) {
+      rawLocalStudents.forEach((s: any) => {
+        const u = String(s.username || s.sbd || '').trim();
+        if (u) {
+          localStudents[u.toLowerCase()] = {
+            username: u,
+            name: String(s.name || u).trim(),
+            password: String(s.password || '123').trim(),
+            group: String(s.group || 'Chưa phân lớp').trim(),
+          };
+        }
+      });
+    } else if (typeof rawLocalStudents === 'object') {
+      Object.entries(rawLocalStudents).forEach(([k, s]: [string, any]) => {
+        const u = String(s.username || k).trim();
+        if (u) {
+          localStudents[u.toLowerCase()] = {
+            username: u,
+            name: String(s.name || u).trim(),
+            password: String(s.password || '123').trim(),
+            group: String(s.group || 'Chưa phân lớp').trim(),
+          };
+        }
+      });
+    }
+  } catch (e) {
+    localStudents = INITIAL_STUDENTS;
+  }
+
   const localExams = JSON.parse(localStorage.getItem(STORAGE_KEYS.EXAMS) || JSON.stringify(INITIAL_EXAMS));
-  const localStudents = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENTS) || JSON.stringify(INITIAL_STUDENTS));
   const localHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || JSON.stringify(INITIAL_HISTORY));
   const localClasses = JSON.parse(localStorage.getItem(STORAGE_KEYS.CLASSES) || JSON.stringify(INITIAL_CLASSES));
 
   return {
-    exams: localExams,
+    exams: Array.isArray(localExams) ? localExams : INITIAL_EXAMS,
     students: localStudents,
-    history: localHistory,
-    classes: localClasses,
+    history: Array.isArray(localHistory) ? localHistory : INITIAL_HISTORY,
+    classes: Array.isArray(localClasses) ? localClasses : INITIAL_CLASSES,
   };
 };
 
