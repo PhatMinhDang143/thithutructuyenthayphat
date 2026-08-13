@@ -68,11 +68,6 @@ export const fetchAllData = async (): Promise<{
           const rawStudents = data.students || {};
           const normalizedStudents: { [username: string]: StudentAccount } = {};
 
-          // Seed with initial students first so defaults exist
-          Object.entries(INITIAL_STUDENTS).forEach(([k, v]) => {
-            normalizedStudents[k.toLowerCase()] = { ...v };
-          });
-
           if (Array.isArray(rawStudents)) {
             rawStudents.forEach((s: any) => {
               if (s) {
@@ -150,10 +145,6 @@ export const fetchAllData = async (): Promise<{
   let localStudents: { [username: string]: StudentAccount } = {};
   try {
     const rawLocalStudents = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENTS) || '{}');
-    // Ensure initial students are present
-    Object.entries(INITIAL_STUDENTS).forEach(([k, v]) => {
-      localStudents[k.toLowerCase()] = { ...v };
-    });
     if (Array.isArray(rawLocalStudents)) {
       rawLocalStudents.forEach((s: any) => {
         const u = String(s.username || s.sbd || '').trim();
@@ -180,7 +171,7 @@ export const fetchAllData = async (): Promise<{
       });
     }
   } catch (e) {
-    localStudents = INITIAL_STUDENTS;
+    localStudents = {};
   }
 
   const localExams = JSON.parse(localStorage.getItem(STORAGE_KEYS.EXAMS) || JSON.stringify(INITIAL_EXAMS));

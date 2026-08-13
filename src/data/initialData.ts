@@ -9,32 +9,7 @@ export const INITIAL_CLASSES = [
   '10C1'
 ];
 
-export const INITIAL_STUDENTS: { [username: string]: StudentAccount } = {
-  'hs12a1_01': {
-    username: 'hs12a1_01',
-    password: '123',
-    name: 'Nguyễn Văn An',
-    group: '12A1'
-  },
-  'hs12a1_02': {
-    username: 'hs12a1_02',
-    password: '123',
-    name: 'Trần Thị Bình',
-    group: '12A1'
-  },
-  'hs12a2_01': {
-    username: 'hs12a2_01',
-    password: '123',
-    name: 'Lê Minh Cường',
-    group: '12A2'
-  },
-  'hs11b1_01': {
-    username: 'hs11b1_01',
-    password: '123',
-    name: 'Phạm Thu Dung',
-    group: '11B1'
-  }
-};
+export const INITIAL_STUDENTS: { [username: string]: StudentAccount } = {};
 
 export const INITIAL_EXAMS: ExamItem[] = [
   {
