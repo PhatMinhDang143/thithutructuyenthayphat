@@ -1,0 +1,6 @@
+{
+  "name": "Hệ Thống Thi Trực Tuyến & Quản Lý Lớp Học",
+  "description": "Hệ thống thi trực tuyến dành cho Học sinh và Quản lý đề thi, phân loại lớp học dành cho Giáo viên.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
