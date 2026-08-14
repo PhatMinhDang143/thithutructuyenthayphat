@@ -5,6 +5,7 @@ import {
   AlertCircle, FileCheck, CheckCircle2, X, ExternalLink, Eye, Info, Link as LinkIcon, Trash2
 } from 'lucide-react';
 import { normalizePdfUrl, validatePdfInput } from '../../utils/pdfUtils';
+import { PdfViewer } from '../common/PdfViewer';
 
 interface ExamFormProps {
   initialData: ExamItem | null;
@@ -635,14 +636,11 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 bg-slate-950 p-2">
+            <div className="flex-1 bg-slate-950 p-2 overflow-hidden flex flex-col">
               {effectivePdfData ? (
-                <iframe
-                  src={normalizePdfUrl(effectivePdfData).previewUrl}
-                  title="PDF Preview"
-                  className="w-full h-full rounded-xl bg-white"
-                  allow="autoplay"
-                />
+                <div className="flex-1 w-full h-full rounded-xl overflow-hidden">
+                  <PdfViewer fileUrl={effectivePdfData} title={title || 'Xem trước đề thi'} />
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-slate-500">
                   <AlertCircle className="w-10 h-10 mb-2" />

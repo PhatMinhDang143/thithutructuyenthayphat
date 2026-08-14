@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppUser, ExamItem, StudentAnswers } from '../../types';
 import { 
   Clock, Minimize2, Maximize2, User, Flag, Check, Edit3, X, 
-  AlertTriangle, Send, FileText, ExternalLink, RefreshCw, AlertCircle, Eye
+  AlertTriangle, Send, FileText, AlertCircle, Eye
 } from 'lucide-react';
-import { normalizePdfUrl } from '../../utils/pdfUtils';
+import { PdfViewer } from '../common/PdfViewer';
 
 interface ExamViewProps {
   user: AppUser;
@@ -24,7 +24,6 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
 
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(window.innerWidth > 768);
-  const [iframeKey, setIframeKey] = useState(0);
 
   // Draggable Floating Button on Mobile
   const [btnPos, setBtnPos] = useState({ x: window.innerWidth - 170, y: window.innerHeight - 80 });
@@ -100,44 +99,6 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     const draftData = { ansPart1, ansPart2, ansPart3, flaggedQuestions, phase, timeLeft, cheatCount };
     localStorage.setItem(storageKey, JSON.stringify(draftData));
   }, [ansPart1, ansPart2, ansPart3, flaggedQuestions, phase, timeLeft, cheatCount]);
-
-  // Robust PDF URL & Type Processing
-  const pdfInfo = normalizePdfUrl(cfg.file_link);
-
-  // Open PDF in a separate tab safely (supporting base64 and Google Drive)
-  const handleOpenPdfInNewTab = () => {
-    if (!cfg.file_link) return;
-
-    if (pdfInfo.isBase64) {
-      try {
-        const base64Data = cfg.file_link.split(',')[1];
-        const contentType = cfg.file_link.split(';')[0].split(':')[1] || 'application/pdf';
-        const byteCharacters = atob(base64Data);
-        const byteArrays = [];
-        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-          const slice = byteCharacters.slice(offset, offset + 512);
-          const byteNumbers = new Array(slice.length);
-          for (let i = 0; i < slice.length; i++) {
-            byteNumbers[i] = slice.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          byteArrays.push(byteArray);
-        }
-        const blob = new Blob(byteArrays, { type: contentType });
-        const blobUrl = URL.createObjectURL(blob);
-        window.open(blobUrl, '_blank', 'noopener,noreferrer');
-      } catch (err) {
-        // Fallback for direct data url opening
-        const win = window.open();
-        if (win) {
-          win.document.write(`<iframe src="${cfg.file_link}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-        }
-      }
-    } else {
-      const urlToOpen = pdfInfo.directUrl || pdfInfo.previewUrl || cfg.file_link;
-      window.open(urlToOpen, '_blank', 'noopener,noreferrer');
-    }
-  };
 
   // Anti-cheat Visibility Tracking
   useEffect(() => {
@@ -235,61 +196,12 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
       <div className="flex-1 flex overflow-hidden relative">
         {/* PDF Viewer Section */}
         <div
-          className={`w-full relative z-10 bg-[#1e1e1e] flex flex-col p-1 md:p-3 pdf-container border-b md:border-b-0 md:border-r border-slate-800 shrink-0 transition-all duration-300 ${
+          className={`w-full relative z-10 bg-[#0b1121] flex flex-col p-1 md:p-2 pdf-container border-b md:border-b-0 md:border-r border-slate-800 shrink-0 transition-all duration-300 ${
             isFocusMode ? 'h-full md:w-full' : 'h-full md:w-3/5 lg:w-2/3'
           }`}
         >
-          {/* Quick PDF Controls & Mobile Fallback Bar */}
-          {pdfInfo.previewUrl && (
-            <div className="flex items-center justify-between bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl mb-2 text-xs shrink-0 gap-2 shadow-sm">
-              <div className="flex items-center gap-1.5 text-slate-300 truncate">
-                <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <span className="hidden sm:inline font-semibold text-[11px] text-slate-400 truncate">
-                  {pdfInfo.isBase64 ? 'File PDF đính kèm trong bài' : 'Tài liệu đề thi'}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIframeKey((prev) => prev + 1)}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
-                  title="Tải lại khung xem đề"
-                >
-                  <RefreshCw className="w-3 h-3" /> Tải lại
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleOpenPdfInNewTab}
-                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-sm shadow-indigo-600/30 transition-all"
-                  title="Mở đề thi trong tab mới để tránh bị văng hoặc khi dùng điện thoại"
-                >
-                  <ExternalLink className="w-3 h-3" /> Mở Tab Mới
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* PDF Frame */}
-          <div className="flex-1 w-full h-full relative overflow-hidden rounded-xl bg-slate-950">
-            {pdfInfo.previewUrl ? (
-              <iframe
-                key={iframeKey}
-                src={pdfInfo.previewUrl}
-                title="Exam PDF Viewer"
-                allow="autoplay"
-                className="w-full h-full md:rounded-xl shadow-2xl bg-white border-0"
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-slate-500 p-6 text-center">
-                <FileText className="w-16 h-16 mb-3 opacity-30 text-indigo-400" />
-                <p className="text-base font-bold text-slate-300">Đề thi chưa đính kèm file PDF</p>
-                <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                  Giáo viên chưa tải file hoặc link đề thi. Bạn hãy liên hệ giáo viên để cập nhật lại đề.
-                </p>
-              </div>
-            )}
+          <div className="flex-1 w-full h-full relative overflow-hidden rounded-xl bg-slate-950 border border-slate-800/80 shadow-2xl">
+            <PdfViewer fileUrl={cfg.file_link} exam={exam} title={exam.title} />
           </div>
         </div>
 
