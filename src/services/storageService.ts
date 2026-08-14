@@ -23,19 +23,61 @@ const STORAGE_KEYS = {
   CLASSES: 'app_classes_data',
 };
 
+// Safe localStorage setter with QuotaExceededError handling & draft garbage collection
+export const safeSetItem = (key: string, value: string): { success: boolean; error?: string } => {
+  try {
+    localStorage.setItem(key, value);
+    return { success: true };
+  } catch (e: any) {
+    const isQuotaError =
+      e &&
+      (e.name === 'QuotaExceededError' ||
+        e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        e.code === 22 ||
+        e.code === 1014);
+
+    if (isQuotaError) {
+      console.warn('LocalStorage quota exceeded. Attempting draft cleanup...');
+      // Prune all temporary exam drafts to free memory
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('exam_draft_') || k.startsWith('temp_'))) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+
+        // Retry saving after pruning
+        localStorage.setItem(key, value);
+        return { success: true };
+      } catch (retryErr: any) {
+        console.error('LocalStorage save failed even after draft cleanup:', retryErr);
+        return {
+          success: false,
+          error:
+            'Dung lượng bộ nhớ trình duyệt đã đầy (giới hạn ~5MB). Nếu đề thi đính kèm file PDF dung lượng lớn, thầy cô vui lòng sử dụng link chia sẻ từ Google Drive thay vì tải file trực tiếp để đảm bảo đồng bộ cho tất cả học sinh!',
+        };
+      }
+    }
+    return { success: false, error: e?.message || 'Không thể lưu vào bộ nhớ trình duyệt.' };
+  }
+};
+
 // Initialize local storage if empty
 export const initLocalStorageIfEmpty = () => {
   if (!localStorage.getItem(STORAGE_KEYS.EXAMS)) {
-    localStorage.setItem(STORAGE_KEYS.EXAMS, JSON.stringify(INITIAL_EXAMS));
+    safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(INITIAL_EXAMS));
   }
   if (!localStorage.getItem(STORAGE_KEYS.STUDENTS)) {
-    localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(INITIAL_STUDENTS));
+    safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(INITIAL_STUDENTS));
   }
   if (!localStorage.getItem(STORAGE_KEYS.HISTORY)) {
-    localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(INITIAL_HISTORY));
+    safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(INITIAL_HISTORY));
   }
   if (!localStorage.getItem(STORAGE_KEYS.CLASSES)) {
-    localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
+    safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
   }
 };
 
@@ -107,9 +149,9 @@ export const fetchAllData = async (): Promise<{
             : [];
 
           // Merge local + remote
-          localStorage.setItem(STORAGE_KEYS.EXAMS, JSON.stringify(exams.length > 0 ? exams : INITIAL_EXAMS));
-          localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(normalizedStudents));
-          localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(history));
+          safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(exams.length > 0 ? exams : INITIAL_EXAMS));
+          safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(normalizedStudents));
+          safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(history));
 
           // Calculate unique classes from students & exams
           const classSet = new Set<string>(INITIAL_CLASSES);
@@ -126,7 +168,7 @@ export const fetchAllData = async (): Promise<{
           });
 
           const classesList = Array.from(classSet);
-          localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(classesList));
+          safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(classesList));
 
           return {
             exams: exams.length > 0 ? exams : INITIAL_EXAMS,
@@ -195,7 +237,11 @@ export const saveExamData = async (examPayload: ExamItem): Promise<{ success: bo
   } else {
     localExams.unshift(examPayload);
   }
-  localStorage.setItem(STORAGE_KEYS.EXAMS, JSON.stringify(localExams));
+  
+  const localSaveRes = safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(localExams));
+  if (!localSaveRes.success) {
+    return { success: false, message: localSaveRes.error || "Không thể lưu đề thi vào bộ nhớ máy do quá tải dung lượng." };
+  }
 
   // Also update class list if new class target is added
   if (examPayload.questions?.target_group) {
@@ -207,7 +253,7 @@ export const saveExamData = async (examPayload: ExamItem): Promise<{ success: bo
         classSet.add(trimmed);
       }
     });
-    localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(Array.from(classSet)));
+    safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(Array.from(classSet)));
   }
 
   const apiUrl = getApiUrl();
@@ -232,7 +278,7 @@ export const deleteExamData = async (examId: string): Promise<{ success: boolean
   initLocalStorageIfEmpty();
   const localExams: ExamItem[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.EXAMS) || '[]');
   const updated = localExams.filter(e => e.id !== examId);
-  localStorage.setItem(STORAGE_KEYS.EXAMS, JSON.stringify(updated));
+  safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(updated));
 
   const apiUrl = getApiUrl();
   if (apiUrl) {
@@ -253,7 +299,10 @@ export const deleteExamData = async (examId: string): Promise<{ success: boolean
 
 export const saveStudentsData = async (studentsObj: { [username: string]: StudentAccount }): Promise<{ success: boolean; message?: string }> => {
   initLocalStorageIfEmpty();
-  localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(studentsObj));
+  const res = safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(studentsObj));
+  if (!res.success) {
+    return { success: false, message: res.error || "Không thể lưu danh sách học viên." };
+  }
 
   // Extract new classes from student groups
   const localClasses: string[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.CLASSES) || '[]');
@@ -263,7 +312,7 @@ export const saveStudentsData = async (studentsObj: { [username: string]: Studen
       classSet.add(s.group.trim());
     }
   });
-  localStorage.setItem(STORAGE_KEYS.CLASSES, JSON.stringify(Array.from(classSet)));
+  safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(Array.from(classSet)));
 
   const apiUrl = getApiUrl();
   if (apiUrl) {
@@ -288,7 +337,7 @@ export const submitExamResult = async (payload: ExamSubmission): Promise<{ succe
   payload.id = 'sub_' + Date.now();
   payload.submitted_at = new Date().toLocaleString('vi-VN');
   localHistory.push(payload);
-  localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(localHistory));
+  safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(localHistory));
 
   const apiUrl = getApiUrl();
   if (apiUrl) {
@@ -308,7 +357,7 @@ export const submitExamResult = async (payload: ExamSubmission): Promise<{ succe
 
 export const clearExamHistory = async (): Promise<{ success: boolean }> => {
   initLocalStorageIfEmpty();
-  localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify([]));
+  safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify([]));
 
   const apiUrl = getApiUrl();
   if (apiUrl) {

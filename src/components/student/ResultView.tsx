@@ -1,6 +1,7 @@
 import React from 'react';
 import { AppUser, ExamItem, ExamSubmission } from '../../types';
 import { Trophy, CheckCircle, XCircle, ArrowLeft, FileText, CheckSquare, Award, Lock, ExternalLink } from 'lucide-react';
+import { normalizePdfUrl } from '../../utils/pdfUtils';
 
 interface ResultViewProps {
   user: AppUser;
@@ -22,8 +23,11 @@ export const ResultView: React.FC<ResultViewProps> = ({
   const p2Questions = Array.from({ length: cfg.num_p2 || 0 }, (_, i) => i + 1);
   const p3Questions = Array.from({ length: cfg.num_p3 || 0 }, (_, i) => i + 1);
 
+  const explainUrlInfo = normalizePdfUrl(cfg.explain_link);
+  const finalExplainUrl = explainUrlInfo.directUrl || explainUrlInfo.previewUrl || cfg.explain_link;
+
   return (
-    <div className="max-w-4xl mx-auto p-4 md:p-8 min-h-[calc(100vh-80px)] flex flex-col justify-between">
+    <div className="max-w-4xl mx-auto p-4 md:p-8 min-h-[calc(100dvh-80px)] flex flex-col justify-between">
       <div>
         {/* Header */}
         <header className="mb-8 border-b border-slate-800 pb-6 text-center">
@@ -62,7 +66,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
 
               {cfg.explain_link && (
                 <a
-                  href={cfg.explain_link}
+                  href={finalExplainUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/40 rounded-xl text-xs font-bold transition-all flex items-center gap-2 self-start"

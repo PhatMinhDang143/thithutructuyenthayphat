@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppUser, ExamItem, StudentAnswers } from '../../types';
-import { Clock, Minimize2, Maximize2, User, Flag, Check, Edit3, X, AlertTriangle, Send, FileText } from 'lucide-react';
+import { 
+  Clock, Minimize2, Maximize2, User, Flag, Check, Edit3, X, 
+  AlertTriangle, Send, FileText, ExternalLink, RefreshCw, AlertCircle, Eye
+} from 'lucide-react';
+import { normalizePdfUrl } from '../../utils/pdfUtils';
 
 interface ExamViewProps {
   user: AppUser;
@@ -20,6 +24,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
 
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(window.innerWidth > 768);
+  const [iframeKey, setIframeKey] = useState(0);
 
   // Draggable Floating Button on Mobile
   const [btnPos, setBtnPos] = useState({ x: window.innerWidth - 170, y: window.innerHeight - 80 });
@@ -96,13 +101,43 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     localStorage.setItem(storageKey, JSON.stringify(draftData));
   }, [ansPart1, ansPart2, ansPart3, flaggedQuestions, phase, timeLeft, cheatCount]);
 
-  // PDF Preview Link Formatter
-  const getPreviewUrl = (url?: string) => {
-    if (!url) return '';
-    if (url.includes('drive.google.com/file/d/')) return url.replace(/\/view.*/, '/preview');
-    return url;
+  // Robust PDF URL & Type Processing
+  const pdfInfo = normalizePdfUrl(cfg.file_link);
+
+  // Open PDF in a separate tab safely (supporting base64 and Google Drive)
+  const handleOpenPdfInNewTab = () => {
+    if (!cfg.file_link) return;
+
+    if (pdfInfo.isBase64) {
+      try {
+        const base64Data = cfg.file_link.split(',')[1];
+        const contentType = cfg.file_link.split(';')[0].split(':')[1] || 'application/pdf';
+        const byteCharacters = atob(base64Data);
+        const byteArrays = [];
+        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+          const slice = byteCharacters.slice(offset, offset + 512);
+          const byteNumbers = new Array(slice.length);
+          for (let i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          byteArrays.push(byteArray);
+        }
+        const blob = new Blob(byteArrays, { type: contentType });
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      } catch (err) {
+        // Fallback for direct data url opening
+        const win = window.open();
+        if (win) {
+          win.document.write(`<iframe src="${cfg.file_link}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+        }
+      }
+    } else {
+      const urlToOpen = pdfInfo.directUrl || pdfInfo.previewUrl || cfg.file_link;
+      window.open(urlToOpen, '_blank', 'noopener,noreferrer');
+    }
   };
-  const pdfUrl = getPreviewUrl(cfg.file_link);
 
   // Anti-cheat Visibility Tracking
   useEffect(() => {
@@ -136,42 +171,61 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     onExamSubmit(studentAnswers, cheatCount, exam);
   };
 
+  // Calculate answered count for progress badge
+  const answeredP1Count = Object.values(ansPart1).filter(Boolean).length;
+  const answeredP2Count = Object.keys(ansPart2).filter(k => {
+    const sub = ansPart2[Number(k)];
+    return sub && (sub.a || sub.b || sub.c || sub.d);
+  }).length;
+  const answeredP3Count = Object.values(ansPart3).filter((v) => Boolean(v && String(v).trim())).length;
+  const totalAnswered = answeredP1Count + answeredP2Count + answeredP3Count;
+  const totalQuestions = numP1 + numP2 + numP3;
+
   const minutes = Math.floor(timeLeft / 60);
   const seconds = String(timeLeft % 60).padStart(2, '0');
   const isDanger = timeLeft < 300;
 
   return (
-    <div className={`h-[calc(100vh-60px)] w-full flex flex-col bg-[#0b1121] overflow-hidden ${isFocusMode ? 'focus-active' : ''}`}>
+    <div className={`h-[100dvh] w-full flex flex-col bg-[#0b1121] overflow-hidden ${isFocusMode ? 'focus-active' : ''}`}>
       {/* Top Bar */}
       <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-3 md:px-6 shrink-0 z-40 shadow-md">
         <div className="flex items-center gap-2 md:gap-4">
           <button
             onClick={() => setIsFocusMode(!isFocusMode)}
             className={`p-2 rounded-lg transition-colors ${isFocusMode ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
-            title="Phóng to đề thi"
+            title={isFocusMode ? "Thu nhỏ đề thi" : "Phóng to đề thi toàn màn hình"}
           >
             {isFocusMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
-          <span className="font-bold text-xs md:text-sm text-indigo-400 uppercase truncate max-w-[180px] md:max-w-xs">
+          <span className="font-bold text-xs md:text-sm text-indigo-400 uppercase truncate max-w-[150px] sm:max-w-xs md:max-w-md">
             {exam.title}
           </span>
         </div>
 
         {/* Timer */}
-        <div className="flex flex-col items-center justify-center bg-slate-800/80 border border-slate-700/60 px-4 py-1 rounded-xl min-w-[120px]">
-          <p className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Thời Gian Còn Lại</p>
+        <div className="flex flex-col items-center justify-center bg-slate-800/90 border border-slate-700/60 px-3 md:px-4 py-1 rounded-xl min-w-[105px] md:min-w-[120px]">
+          <p className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Thời Gian</p>
           <p className={`text-sm md:text-base font-black font-mono tracking-tight flex items-center gap-1 ${isDanger ? 'timer-danger' : 'text-indigo-400'}`}>
             <Clock className="w-3.5 h-3.5 animate-pulse" /> {minutes}:{seconds}
           </p>
         </div>
 
-        {/* Student Info */}
+        {/* Student Info & Mobile Sheet Toggle */}
         <div className="flex items-center gap-2">
+          {/* Quick toggle button on mobile header */}
+          <button
+            onClick={() => setIsMobileSheetOpen(!isMobileSheetOpen)}
+            className="md:hidden px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>{totalAnswered}/{totalQuestions}</span>
+          </button>
+
           <div className="text-right hidden sm:block">
             <p className="text-xs font-bold text-slate-200">{user.name}</p>
             <p className="text-[10px] text-indigo-400 uppercase font-semibold">Lớp: {user.group}</p>
           </div>
-          <div className="bg-indigo-600 p-2 rounded-xl shadow-md">
+          <div className="bg-indigo-600 p-2 rounded-xl shadow-md hidden sm:block">
             <User className="w-4 h-4 text-white" />
           </div>
         </div>
@@ -181,32 +235,88 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
       <div className="flex-1 flex overflow-hidden relative">
         {/* PDF Viewer Section */}
         <div
-          className={`w-full relative z-10 bg-[#1e1e1e] p-1 md:p-4 pdf-container border-b md:border-b-0 md:border-r border-slate-800 shrink-0 transition-all duration-300 ${
+          className={`w-full relative z-10 bg-[#1e1e1e] flex flex-col p-1 md:p-3 pdf-container border-b md:border-b-0 md:border-r border-slate-800 shrink-0 transition-all duration-300 ${
             isFocusMode ? 'h-full md:w-full' : 'h-full md:w-3/5 lg:w-2/3'
           }`}
         >
-          {pdfUrl ? (
-            <iframe src={pdfUrl} allow="autoplay" className="w-full h-full md:rounded-xl shadow-2xl bg-white"></iframe>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500">
-              <FileText className="w-16 h-16 mb-3 opacity-30" />
-              <p className="text-sm font-semibold">Đề thi chưa đính kèm file PDF</p>
-              <p className="text-xs text-slate-600">Vui lòng đọc đề và chọn đáp án ở phiếu bên phải.</p>
+          {/* Quick PDF Controls & Mobile Fallback Bar */}
+          {pdfInfo.previewUrl && (
+            <div className="flex items-center justify-between bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl mb-2 text-xs shrink-0 gap-2 shadow-sm">
+              <div className="flex items-center gap-1.5 text-slate-300 truncate">
+                <FileText className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span className="hidden sm:inline font-semibold text-[11px] text-slate-400 truncate">
+                  {pdfInfo.isBase64 ? 'File PDF đính kèm trong bài' : 'Tài liệu đề thi'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIframeKey((prev) => prev + 1)}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                  title="Tải lại khung xem đề"
+                >
+                  <RefreshCw className="w-3 h-3" /> Tải lại
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenPdfInNewTab}
+                  className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-sm shadow-indigo-600/30 transition-all"
+                  title="Mở đề thi trong tab mới để tránh bị văng hoặc khi dùng điện thoại"
+                >
+                  <ExternalLink className="w-3 h-3" /> Mở Tab Mới
+                </button>
+              </div>
             </div>
           )}
+
+          {/* PDF Frame */}
+          <div className="flex-1 w-full h-full relative overflow-hidden rounded-xl bg-slate-950">
+            {pdfInfo.previewUrl ? (
+              <iframe
+                key={iframeKey}
+                src={pdfInfo.previewUrl}
+                title="Exam PDF Viewer"
+                allow="autoplay"
+                className="w-full h-full md:rounded-xl shadow-2xl bg-white border-0"
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-slate-500 p-6 text-center">
+                <FileText className="w-16 h-16 mb-3 opacity-30 text-indigo-400" />
+                <p className="text-base font-bold text-slate-300">Đề thi chưa đính kèm file PDF</p>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm">
+                  Giáo viên chưa tải file hoặc link đề thi. Bạn hãy liên hệ giáo viên để cập nhật lại đề.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Mobile Backdrop Overlay */}
+        {isMobileSheetOpen && (
+          <div
+            onClick={() => setIsMobileSheetOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 md:hidden transition-opacity"
+            aria-hidden="true"
+          />
+        )}
 
         {/* Floating Draggable Button for Mobile */}
         {!isMobileSheetOpen && (
           <div
-            className="md:hidden fixed z-40 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-3 rounded-full shadow-[0_4px_20px_rgba(79,70,229,0.5)] font-bold flex items-center gap-2 cursor-move select-none"
+            className="md:hidden fixed z-40 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white px-4 py-2.5 rounded-full shadow-[0_6px_25px_rgba(79,70,229,0.6)] font-bold flex items-center gap-2 cursor-move select-none border border-indigo-400/40"
             style={{ left: `${btnPos.x}px`, top: `${btnPos.y}px`, touchAction: 'none' }}
             onPointerDown={onBtnDown}
             onPointerMove={onBtnMove}
             onPointerUp={onBtnUp}
             onPointerCancel={onBtnUp}
           >
-            <Edit3 className="w-4 h-4" /> Phiếu Bài Làm
+            <Edit3 className="w-4 h-4" />
+            <span className="text-xs">Phiếu Bài</span>
+            <span className="bg-indigo-900/80 px-2 py-0.5 rounded-full text-[10px] text-indigo-200 border border-indigo-400/30">
+              {totalAnswered}/{totalQuestions}
+            </span>
           </div>
         )}
 
@@ -216,14 +326,26 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
             isMobileSheetOpen ? 'sheet-open' : ''
           } ${isFocusMode ? 'hidden' : 'flex'}`}
         >
+          {/* Mobile Sheet Drag Handle */}
+          <div 
+            onClick={() => setIsMobileSheetOpen(false)} 
+            className="md:hidden pt-2.5 pb-1 flex justify-center cursor-pointer bg-slate-900/90 rounded-t-3xl"
+          >
+            <div className="w-12 h-1.5 bg-slate-600/80 rounded-full"></div>
+          </div>
+
           <div className="p-3 md:p-4 border-b border-slate-800 flex items-center justify-between shrink-0 bg-slate-900/80">
             <div className="flex items-center gap-2">
               <Edit3 className="w-4 h-4 text-indigo-400" />
               <h3 className="font-bold text-sm uppercase tracking-wider text-slate-200">Phiếu Đáp Án</h3>
+              <span className="text-[11px] font-bold px-2 py-0.5 bg-indigo-950 text-indigo-300 border border-indigo-800/80 rounded-lg">
+                Đã làm: {totalAnswered}/{totalQuestions}
+              </span>
             </div>
             <button
               onClick={() => setIsMobileSheetOpen(false)}
-              className="md:hidden p-2 text-slate-400 hover:text-white bg-slate-800 rounded-lg"
+              className="md:hidden p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-lg"
+              title="Đóng phiếu bài làm"
             >
               <X className="w-4 h-4" />
             </button>

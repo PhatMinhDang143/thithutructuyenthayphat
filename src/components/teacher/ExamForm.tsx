@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ExamItem, AnswerKeyPart1, AnswerKeyPart2, AnswerKeyPart3 } from '../../types';
-import { FilePlus, Save, Loader2, UploadCloud, Clock, Timer, Users, Layers, AlertCircle, FileCheck } from 'lucide-react';
+import { 
+  FilePlus, Save, Loader2, UploadCloud, Clock, Timer, Users, Layers, 
+  AlertCircle, FileCheck, CheckCircle2, X, ExternalLink, Eye, Info, Link as LinkIcon, Trash2
+} from 'lucide-react';
+import { normalizePdfUrl, validatePdfInput } from '../../utils/pdfUtils';
 
 interface ExamFormProps {
   initialData: ExamItem | null;
@@ -29,9 +33,18 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   const [startTime, setStartTime] = useState(initialData?.questions?.start_time || '');
   const [endTime, setEndTime] = useState(initialData?.questions?.end_time || '');
 
-  const [fileLink, setFileLink] = useState(initialData?.questions?.file_link || '');
+  // PDF Source State
+  const initialFileLink = initialData?.questions?.file_link || '';
+  const isInitialBase64 = initialFileLink.startsWith('data:application/pdf') || initialFileLink.startsWith('data:');
+  
+  const [fileLink, setFileLink] = useState(isInitialBase64 ? '' : initialFileLink);
   const [explainLink, setExplainLink] = useState(initialData?.questions?.explain_link || '');
-  const [uploadFile, setUploadFile] = useState<{ name: string; mimeType: string; base64: string } | null>(null);
+  
+  const [uploadFile, setUploadFile] = useState<{ name: string; size: string; base64: string } | null>(
+    isInitialBase64 ? { name: 'File_PDF_Da_Luu.pdf', size: 'Đã lưu trong hệ thống', base64: initialFileLink } : null
+  );
+
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
 
   const [ansP1, setAnsP1] = useState<AnswerKeyPart1>(initialData?.answers?.p1 || {});
   const [ansP2, setAnsP2] = useState<AnswerKeyPart2>(initialData?.answers?.p2 || {});
@@ -50,29 +63,37 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.type !== 'application/pdf') {
-        alert('Vui lòng chọn file PDF!');
+      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        alert('Vui lòng chọn file định dạng PDF!');
         return;
       }
-      if (file.size > 8 * 1024 * 1024) {
-        alert('File quá lớn! Vui lòng chọn file dưới 8MB.');
+      if (file.size > 3.5 * 1024 * 1024) {
+        alert(
+          `File PDF "${file.name}" dung lượng ${(file.size / (1024 * 1024)).toFixed(1)}MB vượt quá giới hạn tải trực tiếp (tối đa 3.5MB do giới hạn bộ nhớ trình duyệt).\n\n💡 KHUYẾN NGHỊ: Thầy cô vui lòng tải file lên Google Drive, mở quyền "Bất kỳ ai có liên kết đều có thể xem" và dán link vào ô "Link File Đề Thi (Google Drive)" bên dưới để đảm bảo mọi học sinh xem đề mượt mà và không lo đầy bộ nhớ!`
+        );
         return;
       }
 
+      const sizeFormatted = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
       const reader = new FileReader();
       reader.onload = (ev) => {
         const resultStr = ev.target?.result as string;
         if (resultStr) {
           setUploadFile({
             name: file.name,
-            mimeType: file.type,
+            size: sizeFormatted,
             base64: resultStr,
           });
-          setFileLink(resultStr); // Use data URL for instant viewing
+          // Clear link input to avoid confusion
+          setFileLink('');
         }
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleRemoveUploadedFile = () => {
+    setUploadFile(null);
   };
 
   const handleToggleClass = (clsName: string) => {
@@ -99,11 +120,39 @@ export const ExamForm: React.FC<ExamFormProps> = ({
     }
   };
 
+  // Determine active PDF url for preview & validation
+  const effectivePdfData = uploadFile?.base64 || fileLink.trim();
+  const pdfValidation = validatePdfInput(fileLink.trim(), !!uploadFile?.base64);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       alert('Vui lòng nhập tiêu đề đề thi!');
       return;
+    }
+
+    // 1. Resolve Final PDF URL/Base64
+    let finalFileLink = '';
+    if (uploadFile && uploadFile.base64) {
+      // Prioritize directly uploaded base64 file
+      finalFileLink = uploadFile.base64;
+    } else if (fileLink.trim()) {
+      const normalized = normalizePdfUrl(fileLink.trim());
+      if (normalized.error) {
+        if (!window.confirm(`Cảnh báo link đề thi:\n${normalized.error}\n\nBạn có muốn tiếp tục lưu không?`)) {
+          return;
+        }
+      }
+      finalFileLink = normalized.previewUrl || fileLink.trim();
+    }
+
+    // 2. Resolve Explain Link
+    let finalExplainLink = explainLink.trim();
+    if (finalExplainLink) {
+      const normalizedExp = normalizePdfUrl(finalExplainLink);
+      if (normalizedExp.isDrive && normalizedExp.directUrl) {
+        finalExplainLink = normalizedExp.directUrl;
+      }
     }
 
     setIsSaving(true);
@@ -119,8 +168,8 @@ export const ExamForm: React.FC<ExamFormProps> = ({
         target_group: targetGroup.trim() || 'Tất cả',
         start_time: startTime,
         end_time: endTime,
-        file_link: fileLink,
-        explain_link: explainLink,
+        file_link: finalFileLink,
+        explain_link: finalExplainLink,
       },
       answers: {
         p1: ansP1,
@@ -129,8 +178,11 @@ export const ExamForm: React.FC<ExamFormProps> = ({
       },
     };
 
-    await onSave(payload);
-    setIsSaving(false);
+    try {
+      await onSave(payload);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -142,7 +194,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
             {initialData ? 'Cập Nhật Cấu Trúc & Phân Lớp Đề Thi' : 'Tạo Đề Thi Mới & Phân Cho Lớp Học'}
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Thiết lập đáp án, ma trận câu hỏi và chọn chính xác lớp học sinh được làm bài.
+            Thiết lập đề thi PDF, đáp án chuẩn, ma trận câu hỏi và chỉ định lớp học sinh được làm bài.
           </p>
         </div>
       </div>
@@ -157,7 +209,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
             </h3>
             <div>
               <label className="block text-slate-300 text-xs font-semibold mb-1.5 uppercase">
-                Tiêu Đề Đề Thi
+                Tiêu Đề Đề Thi <span className="text-rose-400">*</span>
               </label>
               <input
                 type="text"
@@ -171,7 +223,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
 
             <div>
               <label className="block text-slate-300 text-xs font-semibold mb-1.5 uppercase">
-                Thời Gian Làm Bài (Phút)
+                Thời Gian Làm Bài (Phút) <span className="text-rose-400">*</span>
               </label>
               <input
                 type="number"
@@ -336,37 +388,118 @@ export const ExamForm: React.FC<ExamFormProps> = ({
               </div>
             </div>
 
-            <div>
-              <label className="block text-purple-400 font-bold text-xs mb-1.5 uppercase flex items-center gap-1">
-                <UploadCloud className="w-4 h-4" /> Tải File Đề Thi PDF
+            {/* Upload PDF File Directly */}
+            <div className="p-4 bg-purple-950/20 border border-purple-900/40 rounded-xl space-y-2">
+              <label className="block text-purple-300 font-bold text-xs uppercase flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <UploadCloud className="w-4 h-4 text-purple-400" /> Cách 1: Tải File PDF Trực Tiếp Từ Máy
+                </span>
+                <span className="text-[10px] text-emerald-400 font-normal">Khuyên dùng (100% hiển thị)</span>
               </label>
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={handleFileUpload}
-                className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer"
-              />
-              {uploadFile && <p className="text-[11px] text-emerald-400 mt-1 font-semibold">Đã tải lên: {uploadFile.name}</p>}
+
+              {uploadFile ? (
+                <div className="flex items-center justify-between p-3 bg-slate-950 border border-emerald-500/40 rounded-xl">
+                  <div className="flex items-center gap-2.5 overflow-hidden">
+                    <FileCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <div className="truncate">
+                      <p className="text-xs font-bold text-emerald-300 truncate">{uploadFile.name}</p>
+                      <p className="text-[10px] text-slate-400">{uploadFile.size}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowPreviewModal(true)}
+                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
+                      title="Xem thử file PDF"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Xem thử
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemoveUploadedFile}
+                      className="p-1.5 text-rose-400 hover:text-white hover:bg-rose-600/30 rounded-lg transition-colors"
+                      title="Xóa file tải lên"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    onChange={handleFileUpload}
+                    className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    File PDF tải lên sẽ được lưu trữ trực tiếp vào đề thi, không lo bị chặn quyền xem.
+                  </p>
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="block text-slate-400 text-xs font-semibold mb-1">
-                Hoặc Dán Link PDF / Link Lời Giải (Google Drive):
-              </label>
-              <input
-                type="text"
-                value={fileLink}
-                onChange={(e) => setFileLink(e.target.value)}
-                placeholder="https://drive.google.com/..."
-                className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono mb-2"
-              />
-              <input
-                type="text"
-                value={explainLink}
-                onChange={(e) => setExplainLink(e.target.value)}
-                placeholder="Link file lời giải chi tiết (nếu có)..."
-                className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-emerald-300 font-mono"
-              />
+            {/* Paste Link Option */}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-slate-400 text-xs font-semibold mb-1.5 uppercase flex items-center gap-1">
+                  <LinkIcon className="w-3.5 h-3.5 text-indigo-400" /> Cách 2: Hoặc Dán Link Google Drive Đề Thi
+                </label>
+                <input
+                  type="text"
+                  value={fileLink}
+                  onChange={(e) => {
+                    setFileLink(e.target.value);
+                    if (uploadFile) setUploadFile(null);
+                  }}
+                  disabled={!!uploadFile}
+                  placeholder="https://drive.google.com/file/d/.../view"
+                  className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono disabled:opacity-40 disabled:cursor-not-allowed"
+                />
+
+                {/* Validation Status Indicator */}
+                {!uploadFile && fileLink.trim() && (
+                  <div className={`mt-2 p-2.5 rounded-xl border text-xs flex items-start gap-2 ${
+                    pdfValidation.isValid 
+                      ? 'bg-emerald-950/30 border-emerald-800/60 text-emerald-300' 
+                      : 'bg-rose-950/30 border-rose-800/60 text-rose-300'
+                  }`}>
+                    {pdfValidation.isValid ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1">
+                      <p className="font-semibold">{pdfValidation.message}</p>
+                      {pdfValidation.isValid && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setShowPreviewModal(true)}
+                            className="text-[11px] font-bold underline text-indigo-300 hover:text-white flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" /> Xem trước khung đề
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-slate-400 text-xs font-semibold mb-1.5 uppercase flex items-center gap-1">
+                  <ExternalLink className="w-3.5 h-3.5 text-emerald-400" /> Link File Lời Giải Chi Tiết (Tùy chọn)
+                </label>
+                <input
+                  type="text"
+                  value={explainLink}
+                  onChange={(e) => setExplainLink(e.target.value)}
+                  placeholder="https://drive.google.com/... (Xem sau khi nộp bài)"
+                  className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-emerald-300 font-mono"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -466,6 +599,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
         </div>
       </div>
 
+      {/* Action Buttons */}
       <div className="flex justify-end gap-3 mt-8 pt-5 border-t border-slate-800">
         <button
           type="button"
@@ -483,6 +617,43 @@ export const ExamForm: React.FC<ExamFormProps> = ({
           {isSaving ? 'Đang lưu...' : 'Lưu & Phân Lớp Đề Thi'}
         </button>
       </div>
+
+      {/* PDF Preview Modal for Teacher */}
+      {showPreviewModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-4xl h-[85vh] rounded-2xl flex flex-col overflow-hidden shadow-2xl">
+            <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-indigo-400" />
+                <h3 className="font-bold text-sm text-white">Xem Trước Đề Thi PDF Giáo Viên Thiết Lập</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPreviewModal(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 bg-slate-950 p-2">
+              {effectivePdfData ? (
+                <iframe
+                  src={normalizePdfUrl(effectivePdfData).previewUrl}
+                  title="PDF Preview"
+                  className="w-full h-full rounded-xl bg-white"
+                  allow="autoplay"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-500">
+                  <AlertCircle className="w-10 h-10 mb-2" />
+                  <p>Chưa có dữ liệu PDF để xem trước.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 };
+

@@ -140,15 +140,17 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#030712] text-slate-100 flex flex-col font-sans">
-      {/* Top Header */}
-      <Header
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        onRefreshData={loadData}
-      />
+    <div className="min-h-[100dvh] bg-[#030712] text-slate-100 flex flex-col font-sans">
+      {/* Top Header (Hidden during student exam view to give full 100dvh space for reading and answering) */}
+      {!(currentUser && (currentUser.role === 'student' || currentUser.role === 'guest') && studentSubView === 'exam') && (
+        <Header
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onRefreshData={loadData}
+        />
+      )}
 
-      <main className="flex-1">
+      <main className="flex-1 flex flex-col">
         {/* 1. NO USER LOGGED IN -> UNIFIED AUTH VIEW */}
         {!currentUser && (
           <AuthView
@@ -189,7 +191,7 @@ export default function App() {
 
         {/* 2. LOGGED IN AS TEACHER / ADMIN */}
         {currentUser && currentUser.role === 'teacher' && (
-          <div className="flex w-full min-h-[calc(100vh-65px)] overflow-hidden">
+          <div className="flex w-full min-h-[calc(100dvh-65px)] overflow-hidden">
             {/* Teacher Navigation Sidebar */}
             <aside className="w-64 bg-slate-950/80 border-r border-slate-900 flex flex-col shrink-0 p-4 space-y-2 z-20">
               <div className="p-3 mb-2 bg-gradient-to-r from-indigo-950 to-slate-900 border border-indigo-900/50 rounded-xl flex items-center gap-2.5">
