@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { ExamItem, AnswerKeyPart1, AnswerKeyPart2, AnswerKeyPart3 } from '../../types';
 import { 
   FilePlus, Save, Loader2, UploadCloud, Clock, Timer, Users, Layers, 
-  AlertCircle, FileCheck, CheckCircle2, X, ExternalLink, Eye, Info, Link as LinkIcon, Trash2
+  AlertCircle, FileCheck, CheckCircle2, X, ExternalLink, Eye, Info, Link as LinkIcon, Trash2, Cloud, Sparkles
 } from 'lucide-react';
 import { normalizePdfUrl, validatePdfInput } from '../../utils/pdfUtils';
 import { PdfViewer } from '../common/PdfViewer';
+import { uploadPdfToGoogleDrive, getApiUrl } from '../../services/storageService';
 
 interface ExamFormProps {
   initialData: ExamItem | null;
@@ -21,7 +22,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   onCancel,
 }) => {
   const [title, setTitle] = useState(initialData?.title || '');
-  const [duration, setDuration] = useState(initialData?.duration || 45);
+  const [duration, setDuration] = useState<number>(initialData?.duration ? Number(initialData.duration) : 45);
   const [examType, setExamType] = useState<'fixed' | 'custom'>(initialData?.questions?.exam_type || 'fixed');
 
   const [numP1, setNumP1] = useState(initialData?.questions?.num_p1 ?? 12);
@@ -44,6 +45,11 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   const [uploadFile, setUploadFile] = useState<{ name: string; size: string; base64: string } | null>(
     isInitialBase64 ? { name: 'File_PDF_Da_Luu.pdf', size: 'Đã lưu trong hệ thống', base64: initialFileLink } : null
   );
+
+  // Google Drive Upload State
+  const [isUploadingToDrive, setIsUploadingToDrive] = useState(false);
+  const [driveUploadSuccessMsg, setDriveUploadSuccessMsg] = useState<string | null>(null);
+  const [driveUploadErrorMsg, setDriveUploadErrorMsg] = useState<string | null>(null);
 
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
@@ -68,16 +74,17 @@ export const ExamForm: React.FC<ExamFormProps> = ({
         alert('Vui lòng chọn file định dạng PDF!');
         return;
       }
-      if (file.size > 3.5 * 1024 * 1024) {
-        alert(
-          `File PDF "${file.name}" dung lượng ${(file.size / (1024 * 1024)).toFixed(1)}MB vượt quá giới hạn tải trực tiếp (tối đa 3.5MB do giới hạn bộ nhớ trình duyệt).\n\n💡 KHUYẾN NGHỊ: Thầy cô vui lòng tải file lên Google Drive, mở quyền "Bất kỳ ai có liên kết đều có thể xem" và dán link vào ô "Link File Đề Thi (Google Drive)" bên dưới để đảm bảo mọi học sinh xem đề mượt mà và không lo đầy bộ nhớ!`
-        );
+      if (file.size > 25 * 1024 * 1024) {
+        alert(`File PDF "${file.name}" dung lượng quá lớn (${(file.size / (1024 * 1024)).toFixed(1)}MB). Vui lòng chọn file dưới 25MB.`);
         return;
       }
 
+      setDriveUploadSuccessMsg(null);
+      setDriveUploadErrorMsg(null);
+
       const sizeFormatted = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
       const reader = new FileReader();
-      reader.onload = (ev) => {
+      reader.onload = async (ev) => {
         const resultStr = ev.target?.result as string;
         if (resultStr) {
           setUploadFile({
@@ -85,16 +92,44 @@ export const ExamForm: React.FC<ExamFormProps> = ({
             size: sizeFormatted,
             base64: resultStr,
           });
-          // Clear link input to avoid confusion
-          setFileLink('');
+
+          // If Apps Script API is configured, automatically attempt to upload to Google Drive
+          const hasApi = !!getApiUrl();
+          if (hasApi) {
+            handleUploadToGoogleDriveDirect(resultStr, file.name);
+          }
         }
       };
       reader.readAsDataURL(file);
     }
   };
 
+  const handleUploadToGoogleDriveDirect = async (base64Str: string, fileName: string) => {
+    setIsUploadingToDrive(true);
+    setDriveUploadSuccessMsg(null);
+    setDriveUploadErrorMsg(null);
+
+    try {
+      const res = await uploadPdfToGoogleDrive(base64Str, fileName);
+      if (res.success && res.previewUrl) {
+        setFileLink(res.previewUrl);
+        setDriveUploadSuccessMsg(`Đã tải lên Google Drive thành công (Thư mục: DeThi_Online_Drive)! Link xem trước: ${res.previewUrl}`);
+        // Clear local base64 so browser memory isn't loaded with large payload
+        setUploadFile(null);
+      } else {
+        setDriveUploadErrorMsg(res.error || 'Không thể tải file lên Google Drive. Đã lưu file cục bộ.');
+      }
+    } catch (err: any) {
+      setDriveUploadErrorMsg(err?.message || 'Lỗi khi đẩy file lên Google Drive.');
+    } finally {
+      setIsUploadingToDrive(false);
+    }
+  };
+
   const handleRemoveUploadedFile = () => {
     setUploadFile(null);
+    setDriveUploadSuccessMsg(null);
+    setDriveUploadErrorMsg(null);
   };
 
   const handleToggleClass = (clsName: string) => {
@@ -133,14 +168,32 @@ export const ExamForm: React.FC<ExamFormProps> = ({
     }
 
     // 1. Resolve Final PDF URL/Base64
-    let finalFileLink = '';
-    if (uploadFile && uploadFile.base64) {
-      // Prioritize directly uploaded base64 file
-      finalFileLink = uploadFile.base64;
+    let finalFileLink = fileLink.trim();
+
+    // If teacher selected a local file that hasn't been uploaded to Google Drive yet, try to upload it now
+    if (uploadFile && uploadFile.base64 && !finalFileLink) {
+      setIsSaving(true);
+      const hasApi = !!getApiUrl();
+      if (hasApi) {
+        try {
+          const driveRes = await uploadPdfToGoogleDrive(uploadFile.base64, uploadFile.name);
+          if (driveRes.success && driveRes.previewUrl) {
+            finalFileLink = driveRes.previewUrl;
+          } else {
+            // Fallback to local base64
+            finalFileLink = uploadFile.base64;
+          }
+        } catch (err) {
+          finalFileLink = uploadFile.base64;
+        }
+      } else {
+        finalFileLink = uploadFile.base64;
+      }
     } else if (fileLink.trim()) {
       const normalized = normalizePdfUrl(fileLink.trim());
       if (normalized.error) {
         if (!window.confirm(`Cảnh báo link đề thi:\n${normalized.error}\n\nBạn có muốn tiếp tục lưu không?`)) {
+          setIsSaving(false);
           return;
         }
       }
@@ -157,10 +210,11 @@ export const ExamForm: React.FC<ExamFormProps> = ({
     }
 
     setIsSaving(true);
+    const durationNum = Math.max(1, Number(duration) || 45);
     const payload: ExamItem = {
       id: initialData?.id || 'ex_' + Date.now(),
       title: title.trim(),
-      duration: Number(duration),
+      duration: durationNum,
       questions: {
         exam_type: examType,
         num_p1: Number(numP1),
@@ -222,18 +276,48 @@ export const ExamForm: React.FC<ExamFormProps> = ({
               />
             </div>
 
+            {/* DURATION SETTING WITH QUICK PRESET BUTTONS */}
             <div>
-              <label className="block text-slate-300 text-xs font-semibold mb-1.5 uppercase">
-                Thời Gian Làm Bài (Phút) <span className="text-rose-400">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-slate-300 text-xs font-semibold uppercase flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-indigo-400" />
+                  Thời Gian Làm Bài (Phút) <span className="text-rose-400">*</span>
+                </label>
+                <span className="text-xs font-extrabold text-indigo-300 bg-indigo-950/80 px-2.5 py-0.5 rounded-lg border border-indigo-700/60">
+                  {duration} Phút
+                </span>
+              </div>
               <input
                 type="number"
                 value={duration}
-                onChange={(e) => setDuration(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  setDuration(isNaN(val) ? 0 : Math.max(1, val));
+                }}
                 required
                 min={1}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:border-indigo-500 text-xs font-medium"
+                max={360}
+                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:border-indigo-500 text-sm font-bold mb-2"
+                placeholder="Nhập số phút làm bài (VD: 45, 60, 90)..."
               />
+
+              {/* Quick Preset Buttons */}
+              <div className="flex flex-wrap gap-1.5">
+                {[15, 30, 45, 50, 60, 90, 120].map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => setDuration(mins)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                      duration === mins
+                        ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    {mins} phút
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -389,42 +473,115 @@ export const ExamForm: React.FC<ExamFormProps> = ({
               </div>
             </div>
 
-            {/* Upload PDF File Directly */}
-            <div className="p-4 bg-purple-950/20 border border-purple-900/40 rounded-xl space-y-2">
+            {/* Upload PDF File Directly & Google Drive Cloud Storage */}
+            <div className="p-4 bg-purple-950/20 border border-purple-900/40 rounded-xl space-y-3">
               <label className="block text-purple-300 font-bold text-xs uppercase flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <UploadCloud className="w-4 h-4 text-purple-400" /> Cách 1: Tải File PDF Trực Tiếp Từ Máy
+                  <UploadCloud className="w-4 h-4 text-purple-400" /> Cách 1: Tải File PDF & Lưu Lên Google Drive
                 </span>
-                <span className="text-[10px] text-emerald-400 font-normal">Khuyên dùng (100% hiển thị)</span>
+                <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                  <Cloud className="w-3 h-3 text-emerald-400" /> Tự động đẩy lên Google Drive
+                </span>
               </label>
 
-              {uploadFile ? (
-                <div className="flex items-center justify-between p-3 bg-slate-950 border border-emerald-500/40 rounded-xl">
-                  <div className="flex items-center gap-2.5 overflow-hidden">
-                    <FileCheck className="w-5 h-5 text-emerald-400 shrink-0" />
-                    <div className="truncate">
-                      <p className="text-xs font-bold text-emerald-300 truncate">{uploadFile.name}</p>
-                      <p className="text-[10px] text-slate-400">{uploadFile.size}</p>
+              {/* Upload Status Banner */}
+              {isUploadingToDrive && (
+                <div className="p-3 bg-indigo-950/70 border border-indigo-500/50 rounded-xl flex items-center gap-2.5 text-indigo-200 text-xs">
+                  <Loader2 className="w-4 h-4 text-indigo-400 animate-spin shrink-0" />
+                  <div>
+                    <p className="font-bold text-white">Đang tải file lên Google Drive qua Apps Script...</p>
+                    <p className="text-[10px] text-indigo-300">File sẽ được lưu vào thư mục [DeThi_Online_Drive] và tạo link công khai.</p>
+                  </div>
+                </div>
+              )}
+
+              {driveUploadSuccessMsg && (
+                <div className="p-3 bg-emerald-950/60 border border-emerald-500/50 rounded-xl flex items-start gap-2 text-emerald-300 text-xs">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-bold text-white">Đã tải lên Google Drive thành công!</p>
+                    <p className="text-[10px] text-emerald-300 mt-0.5">
+                      File đã được lưu vào thư mục <strong>DeThi_Online_Drive</strong> và link xem trước được gắn vào đề thi.
+                    </p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowPreviewModal(true)}
+                        className="text-[11px] font-bold text-cyan-300 hover:text-white underline flex items-center gap-1"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> Xem thử PDF
+                      </button>
+                      {fileLink && (
+                        <a
+                          href={fileLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] font-bold text-indigo-300 hover:text-white underline flex items-center gap-1"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" /> Mở trên Google Drive
+                        </a>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setShowPreviewModal(true)}
-                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
-                      title="Xem thử file PDF"
-                    >
-                      <Eye className="w-3.5 h-3.5" /> Xem thử
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleRemoveUploadedFile}
-                      className="p-1.5 text-rose-400 hover:text-white hover:bg-rose-600/30 rounded-lg transition-colors"
-                      title="Xóa file tải lên"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                </div>
+              )}
+
+              {driveUploadErrorMsg && (
+                <div className="p-3 bg-amber-950/50 border border-amber-500/40 rounded-xl flex items-start gap-2 text-amber-300 text-xs">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-bold text-amber-200">Thông báo tải lên Google Drive:</p>
+                    <p className="text-[11px] text-amber-300/90 mt-0.5 leading-relaxed">{driveUploadErrorMsg}</p>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      💡 Hệ thống vẫn lưu trữ file PDF trực tiếp để học sinh làm bài bình thường.
+                    </p>
                   </div>
+                </div>
+              )}
+
+              {uploadFile ? (
+                <div className="p-3 bg-slate-950 border border-emerald-500/40 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 overflow-hidden">
+                      <FileCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                      <div className="truncate">
+                        <p className="text-xs font-bold text-emerald-300 truncate">{uploadFile.name}</p>
+                        <p className="text-[10px] text-slate-400">{uploadFile.size}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setShowPreviewModal(true)}
+                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
+                        title="Xem thử file PDF"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> Xem thử
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemoveUploadedFile}
+                        className="p-1.5 text-rose-400 hover:text-white hover:bg-rose-600/30 rounded-lg transition-colors"
+                        title="Xóa file tải lên"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Manual Push to Drive Button if not uploaded yet */}
+                  {!isUploadingToDrive && (
+                    <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400">Đã chọn file PDF</span>
+                      <button
+                        type="button"
+                        onClick={() => handleUploadToGoogleDriveDirect(uploadFile.base64, uploadFile.name)}
+                        className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-md shadow-purple-600/20"
+                      >
+                        <Cloud className="w-3.5 h-3.5" /> Đẩy Lên Google Drive Ngay
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>
@@ -434,8 +591,8 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                     onChange={handleFileUpload}
                     className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">
-                    File PDF tải lên sẽ được lưu trữ trực tiếp vào đề thi, không lo bị chặn quyền xem.
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                    Chọn file PDF đề thi từ máy tính. Hệ thống sẽ tự động lưu và đẩy lên thư mục <strong>DeThi_Online_Drive</strong> trên Google Drive của giáo viên.
                   </p>
                 </div>
               )}

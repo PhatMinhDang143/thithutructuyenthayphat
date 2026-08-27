@@ -24,6 +24,71 @@ export const STORAGE_KEYS = {
   LAST_SYNC: 'app_last_sync_timestamp',
 };
 
+// Upload PDF directly to Google Drive via Google Apps Script
+export const uploadPdfToGoogleDrive = async (
+  base64Data: string,
+  fileName: string
+): Promise<{
+  success: boolean;
+  fileId?: string;
+  fileUrl?: string;
+  previewUrl?: string;
+  directUrl?: string;
+  message?: string;
+  error?: string;
+}> => {
+  const apiUrl = getApiUrl();
+  if (!apiUrl) {
+    return {
+      success: false,
+      error: 'Chưa cấu hình Google Apps Script API URL. Vui lòng bấm vào nút Cài đặt (⚙️) ở góc trên để cấu hình.',
+    };
+  }
+
+  try {
+    const payload = {
+      action: 'upload_to_drive',
+      base64: base64Data,
+      fileName: fileName || `De_Thi_${Date.now()}.pdf`,
+    };
+
+    const res = await fetch(`${apiUrl}?action=upload_to_drive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error: `Lỗi kết nối Apps Script: HTTP ${res.status}. Vui lòng kiểm tra lại URL API.`,
+      };
+    }
+
+    const data = await res.json();
+    if (data && data.success && (data.previewUrl || data.fileUrl)) {
+      return {
+        success: true,
+        fileId: data.fileId,
+        fileUrl: data.fileUrl,
+        previewUrl: data.previewUrl,
+        directUrl: data.directUrl,
+        message: data.message || 'Đã lưu file thành công vào thư mục Google Drive!',
+      };
+    } else {
+      return {
+        success: false,
+        error: data?.error || 'Google Apps Script không thể lưu file vào Google Drive.',
+      };
+    }
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `Không thể kết nối đến Google Apps Script (${err?.message || err}). Hãy đảm bảo Web App được triển khai với quyền "Bất kỳ ai" (Anyone).`,
+    };
+  }
+};
+
 // Safe localStorage setter with QuotaExceededError handling & draft garbage collection
 export const safeSetItem = (key: string, value: string): { success: boolean; error?: string } => {
   try {
@@ -186,9 +251,12 @@ export const fetchAllData = async (): Promise<{
       const localVer = examMap.get(rEx.id);
       if (!localVer) {
         // New exam from cloud sheet
-        examMap.set(rEx.id, rEx);
+        examMap.set(rEx.id, {
+          ...rEx,
+          duration: Number(rEx.duration) || 45,
+        });
       } else {
-        // If local has base64 file and remote doesn't, keep local file
+        // Local takes precedence for user edits, but merge non-conflicting remote data
         const mergedQuestions = {
           ...(rEx.questions || {}),
           ...(localVer.questions || {}),
@@ -200,6 +268,8 @@ export const fetchAllData = async (): Promise<{
         const mergedExam: ExamItem = {
           ...rEx,
           ...localVer,
+          duration: localVer.duration !== undefined ? Number(localVer.duration) : Number(rEx.duration) || 45,
+          title: localVer.title || rEx.title || '',
           questions: mergedQuestions,
           answers: {
             p1: { ...(rEx.answers?.p1 || {}), ...(localVer.answers?.p1 || {}) },
@@ -283,11 +353,14 @@ export const saveExamData = async (
 ): Promise<{ success: boolean; cloudSynced: boolean; message: string }> => {
   initLocalStorageIfEmpty();
 
+  // Normalize duration & values
+  examPayload.duration = Number(examPayload.duration) || 45;
+
   // 1. ALWAYS persist directly to LocalStorage first (Zero data loss guarantee)
   const localExams = getLocalExams();
   const idx = localExams.findIndex((e) => e.id === examPayload.id);
   if (idx >= 0) {
-    localExams[idx] = examPayload;
+    localExams[idx] = { ...localExams[idx], ...examPayload };
   } else {
     localExams.unshift(examPayload);
   }
@@ -326,7 +399,7 @@ export const saveExamData = async (
   if (apiUrl) {
     try {
       // Create a cloud payload. If file_link is a huge base64, send a marked indicator to avoid Google Sheet cell 50k char limit
-      const cloudPayload = { ...examPayload };
+      const cloudPayload = { ...examPayload, duration: Number(examPayload.duration) || 45 };
       if (cloudPayload.questions?.file_link?.startsWith('data:')) {
         // Large base64 files cannot fit in a standard Google Sheet cell (limit 50,000 chars)
         // Keep local base64, but flag in cloud sheet
@@ -503,14 +576,14 @@ export const clearExamHistory = async (): Promise<{ success: boolean }> => {
 
 // Full Google Apps Script Code.gs Template for Teachers
 export const GOOGLE_APPS_SCRIPT_CODE = `/**
- * GOOGLE APPS SCRIPT CHO HỆ THỐNG THI TRỰC TUYẾN
- * Hướng dẫn cài đặt:
+ * GOOGLE APPS SCRIPT CHO HỆ THỐNG THI TRỰC TUYẾN (HỖ TRỢ LƯU FILE GOOGLE DRIVE)
+ * Hướng dẫn cài đặt / Cập nhật:
  * 1. Mở Google Sheet -> Chọn Tiện ích mở rộng (Extensions) -> Apps Script
- * 2. Xóa toàn bộ mã cũ và dán toàn bộ đoạn mã này vào.
- * 3. Bấm "Triển khai" (Deploy) -> "Tùy chọn triển khai mới" (New deployment).
- * 4. Chọn loại: "Ứng dụng web" (Web app).
- * 5. Chọn: Thực thi dưới dạng "Tôi" (Me), Ai có quyền truy cập: "Bất kỳ ai" (Anyone).
- * 6. Bấm "Triển khai" và sao chép đường link Web App (có đuôi /exec) dán vào Cấu hình hệ thống.
+ * 2. Xóa toàn bộ mã cũ và dán toàn bộ đoạn mã này vào file Code.gs.
+ * 3. Bấm "Triển khai" (Deploy) -> "Quản lý tùy chọn triển khai" (Manage deployments)
+ *    -> Bấm biểu tượng cây bút (Chỉnh sửa) -> Chọn Phiên bản: "Mới" (New version) -> Bấm "Triển khai" (Deploy).
+ *    (Hoặc tạo "Tùy chọn triển khai mới" nếu làm lần đầu, chọn loại "Ứng dụng web", Quyền truy cập: "Bất kỳ ai / Anyone").
+ * 4. Sao chép đường link Web App (có đuôi /exec) dán vào Cấu hình hệ thống.
  */
 
 function doGet(e) {
@@ -526,7 +599,7 @@ function doGet(e) {
     return createJsonResponse({ success: true, data: data });
   }
   
-  return createJsonResponse({ success: false, error: 'Hành động không hợp lệ' });
+  return createJsonResponse({ success: false, error: 'Hành động không hợp lệ: ' + action });
 }
 
 function doPost(e) {
@@ -534,37 +607,54 @@ function doPost(e) {
     var action = (e && e.parameter && e.parameter.action) || '';
     var postData = {};
     if (e && e.postData && e.postData.contents) {
-      postData = JSON.parse(e.postData.contents);
+      try {
+        postData = JSON.parse(e.postData.contents);
+      } catch (parseErr) {
+        postData = {};
+      }
+    }
+    if (!action && postData.action) {
+      action = postData.action;
     }
     
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     
+    // 1. TẢI FILE PDF LÊN GOOGLE DRIVE
+    if (action === 'upload_to_drive' || action === 'upload_file') {
+      return createJsonResponse(uploadFileToDrive(postData));
+    }
+    
+    // 2. LƯU CẤU HÌNH ĐỀ THI
     if (action === 'save_exam') {
       saveExamToSheet(ss, postData);
       return createJsonResponse({ success: true, message: 'Đã lưu đề thi thành công' });
     }
     
+    // 3. XÓA ĐỀ THI
     if (action === 'delete_exam') {
       deleteExamFromSheet(ss, postData.id);
       return createJsonResponse({ success: true, message: 'Đã xóa đề thi thành công' });
     }
     
+    // 4. LƯU DANH SÁCH HỌC SINH
     if (action === 'save_students') {
       saveStudentsToSheet(ss, postData.students);
       return createJsonResponse({ success: true, message: 'Đã lưu danh sách học sinh' });
     }
     
+    // 5. NỘP BÀI THI
     if (action === 'submit') {
       saveSubmissionToSheet(ss, postData);
       return createJsonResponse({ success: true, message: 'Đã lưu kết quả thi' });
     }
     
+    // 6. XÓA NHẬT KÝ THI
     if (action === 'clear_history') {
       clearHistorySheet(ss);
       return createJsonResponse({ success: true, message: 'Đã xóa nhật ký thi' });
     }
     
-    return createJsonResponse({ success: false, error: 'Hành động POST không hợp lệ' });
+    return createJsonResponse({ success: false, error: 'Hành động POST không hợp lệ: ' + action });
   } catch (err) {
     return createJsonResponse({ success: false, error: err.toString() });
   }
@@ -575,9 +665,81 @@ function createJsonResponse(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// 0. Hàm tải file PDF lên Google Drive và tạo liên kết công khai
+function uploadFileToDrive(postData) {
+  try {
+    var rawName = postData.fileName || ('De_Thi_' + new Date().getTime() + '.pdf');
+    var base64Data = postData.base64 || '';
+    
+    if (!base64Data) {
+      return { success: false, error: 'Không tìm thấy dữ liệu file base64' };
+    }
+    
+    // Tách phần đầu data:application/pdf;base64 nếu có
+    if (base64Data.indexOf('base64,') > -1) {
+      base64Data = base64Data.split('base64,')[1];
+    }
+    
+    var decoded = Utilities.base64Decode(base64Data);
+    var blob = Utilities.newBlob(decoded, 'application/pdf', rawName);
+    
+    // Tạo hoặc lấy thư mục "DeThi_Online_Drive" trên Google Drive của giáo viên
+    var folderName = 'DeThi_Online_Drive';
+    var folders = DriveApp.getFoldersByName(folderName);
+    var folder;
+    if (folders.hasNext()) {
+      folder = folders.next();
+    } else {
+      folder = DriveApp.createFolder(folderName);
+    }
+    
+    var file = folder.createFile(blob);
+    // Cấp quyền bất kỳ ai có liên kết đều xem được
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    var fileId = file.getId();
+    var fileUrl = file.getUrl();
+    var previewUrl = 'https://drive.google.com/file/d/' + fileId + '/preview';
+    var directUrl = 'https://drive.google.com/uc?export=download&id=' + fileId;
+    
+    return {
+      success: true,
+      fileId: fileId,
+      fileUrl: fileUrl,
+      previewUrl: previewUrl,
+      directUrl: directUrl,
+      fileName: file.getName(),
+      message: 'Đã tải và lưu file thành công vào thư mục Google Drive [' + folderName + ']!'
+    };
+  } catch (err) {
+    return { success: false, error: 'Lỗi tải lên Google Drive: ' + err.toString() };
+  }
+}
+
+// Helper to find sheet by multiple alias names (Vietnamese & English)
+function findSheet(ss, names) {
+  for (var i = 0; i < names.length; i++) {
+    var s = ss.getSheetByName(names[i]);
+    if (s) return s;
+  }
+  return null;
+}
+
+function getExamSheet(ss) {
+  return findSheet(ss, ['Exams', 'Dethi', 'DeThi', 'Đề thi', 'De_Thi']) || ss.insertSheet('Exams');
+}
+
+function getStudentSheet(ss) {
+  return findSheet(ss, ['Students', 'Hocsinh', 'HocSinh', 'Học sinh', 'Danh_Sach_Hoc_Sinh']) || ss.insertSheet('Students');
+}
+
+function getHistorySheet(ss) {
+  return findSheet(ss, ['History', 'Lichsu', 'LichSu', 'Lịch sử', 'Nhat_Ky_Thi']) || ss.insertSheet('History');
+}
+
 // 1. Quản lý Sheet Exams
 function getExamsData(ss) {
-  var sheet = ss.getSheetByName('Exams') || ss.insertSheet('Exams');
+  var sheet = getExamSheet(ss);
   var rows = sheet.getDataRange().getValues();
   if (rows.length <= 1) return [];
   
@@ -589,7 +751,7 @@ function getExamsData(ss) {
         exams.push({
           id: String(r[0]),
           title: String(r[1] || ''),
-          duration: Number(r[2] || 45),
+          duration: Number(r[2]) || 45,
           questions: r[3] ? JSON.parse(r[3]) : {},
           answers: r[4] ? JSON.parse(r[4]) : {}
         });
@@ -600,7 +762,7 @@ function getExamsData(ss) {
 }
 
 function saveExamToSheet(ss, exam) {
-  var sheet = ss.getSheetByName('Exams') || ss.insertSheet('Exams');
+  var sheet = getExamSheet(ss);
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(['ID', 'Title', 'Duration', 'Questions_JSON', 'Answers_JSON', 'Updated_At']);
   }
@@ -613,10 +775,11 @@ function saveExamToSheet(ss, exam) {
     }
   }
   
+  var durationVal = Number(exam.duration) || 45;
   var rowValues = [
-    exam.id,
-    exam.title,
-    exam.duration,
+    String(exam.id),
+    String(exam.title || ''),
+    durationVal,
     JSON.stringify(exam.questions || {}),
     JSON.stringify(exam.answers || {}),
     new Date().toLocaleString('vi-VN')
@@ -630,7 +793,7 @@ function saveExamToSheet(ss, exam) {
 }
 
 function deleteExamFromSheet(ss, examId) {
-  var sheet = ss.getSheetByName('Exams');
+  var sheet = getExamSheet(ss);
   if (!sheet) return;
   var data = sheet.getDataRange().getValues();
   for (var i = 1; i < data.length; i++) {
@@ -643,7 +806,7 @@ function deleteExamFromSheet(ss, examId) {
 
 // 2. Quản lý Sheet Students
 function getStudentsData(ss) {
-  var sheet = ss.getSheetByName('Students') || ss.insertSheet('Students');
+  var sheet = getStudentSheet(ss);
   var rows = sheet.getDataRange().getValues();
   if (rows.length <= 1) return {};
   
@@ -654,7 +817,7 @@ function getStudentsData(ss) {
       students[u.toLowerCase()] = {
         username: u,
         name: String(rows[i][1] || u),
-        password: String(rows[i][2] || '123'),
+        password: String(rows[i][2] !== undefined ? rows[i][2] : '123'),
         group: String(rows[i][3] || 'Chưa phân lớp')
       };
     }
@@ -663,7 +826,7 @@ function getStudentsData(ss) {
 }
 
 function saveStudentsToSheet(ss, studentsObj) {
-  var sheet = ss.getSheetByName('Students') || ss.insertSheet('Students');
+  var sheet = getStudentSheet(ss);
   sheet.clearContents();
   sheet.appendRow(['Username', 'Name', 'Password', 'Group', 'Updated_At']);
   
@@ -681,7 +844,7 @@ function saveStudentsToSheet(ss, studentsObj) {
 
 // 3. Quản lý Sheet History
 function getHistoryData(ss) {
-  var sheet = ss.getSheetByName('History') || ss.insertSheet('History');
+  var sheet = getHistorySheet(ss);
   var rows = sheet.getDataRange().getValues();
   if (rows.length <= 1) return [];
   
@@ -705,7 +868,7 @@ function getHistoryData(ss) {
 }
 
 function saveSubmissionToSheet(ss, sub) {
-  var sheet = ss.getSheetByName('History') || ss.insertSheet('History');
+  var sheet = getHistorySheet(ss);
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(['ID', 'Thời Gian', 'Tài Khoản', 'Họ Tên', 'Lớp', 'Đề Thi', 'Điểm', 'Số Câu Đúng', 'Cảnh Báo']);
   }
@@ -723,7 +886,7 @@ function saveSubmissionToSheet(ss, sub) {
 }
 
 function clearHistorySheet(ss) {
-  var sheet = ss.getSheetByName('History');
+  var sheet = getHistorySheet(ss);
   if (sheet) {
     sheet.clearContents();
     sheet.appendRow(['ID', 'Thời Gian', 'Tài Khoản', 'Họ Tên', 'Lớp', 'Đề Thi', 'Điểm', 'Số Câu Đúng', 'Cảnh Báo']);
