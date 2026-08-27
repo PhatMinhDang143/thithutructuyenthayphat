@@ -22,7 +22,7 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh 
         onSave={async (payload) => {
           const res = await saveExamData(payload);
           if (res.success) {
-            alert('Đã lưu cấu hình & phân lớp đề thi thành công!');
+            alert(res.message || 'Đã lưu cấu hình & phân lớp đề thi thành công!');
             setEditingExam(null);
             onRefresh();
           } else {
