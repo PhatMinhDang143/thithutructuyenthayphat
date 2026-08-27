@@ -360,7 +360,21 @@ export const saveExamData = async (
   const localExams = getLocalExams();
   const idx = localExams.findIndex((e) => e.id === examPayload.id);
   if (idx >= 0) {
-    localExams[idx] = { ...localExams[idx], ...examPayload };
+    const existing = localExams[idx];
+    const finalFileLink = examPayload.questions?.file_link || existing.questions?.file_link || '';
+    const finalExplainLink = examPayload.questions?.explain_link !== undefined ? examPayload.questions.explain_link : (existing.questions?.explain_link || '');
+    
+    localExams[idx] = { 
+      ...existing, 
+      ...examPayload,
+      duration: Number(examPayload.duration) || 45,
+      questions: {
+        ...(existing.questions || {}),
+        ...(examPayload.questions || {}),
+        file_link: finalFileLink,
+        explain_link: finalExplainLink,
+      }
+    };
   } else {
     localExams.unshift(examPayload);
   }
@@ -580,11 +594,20 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * Hướng dẫn cài đặt / Cập nhật:
  * 1. Mở Google Sheet -> Chọn Tiện ích mở rộng (Extensions) -> Apps Script
  * 2. Xóa toàn bộ mã cũ và dán toàn bộ đoạn mã này vào file Code.gs.
- * 3. Bấm "Triển khai" (Deploy) -> "Quản lý tùy chọn triển khai" (Manage deployments)
+ * 3. [QUAN TRỌNG ĐỂ CẤP QUYỀN DRIVE]:
+ *    - Ở thanh công cụ trên cùng của Apps Script, chọn hàm "testAuthorizeDrive" và bấm nút "Chạy" (Run ▶️).
+ *    - Google sẽ hiện popup "Cần có sự ủy quyền" -> Bấm "Xem lại quyền" -> Chọn tài khoản của bạn -> Bấm "Nâng cao" (Advanced) -> "Đi tới Dự án (không an toàn)" -> "Cho phép" (Allow).
+ * 4. Bấm "Triển khai" (Deploy) -> "Quản lý tùy chọn triển khai" (Manage deployments)
  *    -> Bấm biểu tượng cây bút (Chỉnh sửa) -> Chọn Phiên bản: "Mới" (New version) -> Bấm "Triển khai" (Deploy).
- *    (Hoặc tạo "Tùy chọn triển khai mới" nếu làm lần đầu, chọn loại "Ứng dụng web", Quyền truy cập: "Bất kỳ ai / Anyone").
- * 4. Sao chép đường link Web App (có đuôi /exec) dán vào Cấu hình hệ thống.
  */
+
+// Hàm chạy thử 1 lần để cấp quyền Google Drive (Bấm nút Run ▶️ hàm này trong Apps Script)
+function testAuthorizeDrive() {
+  var folderName = 'DeThi_Online_Drive';
+  var folders = DriveApp.getFoldersByName(folderName);
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+  Logger.log('Đã cấp quyền Google Drive thành công! Thư mục: ' + folder.getName());
+}
 
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || 'get_all';
