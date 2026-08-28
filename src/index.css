@@ -7,55 +7,145 @@ body,
   min-height: 100dvh;
   margin: 0;
   padding: 0;
+  background-color: #FDF6E9;
+  color: #111111;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
 }
 
 @layer utilities {
-  .glass-panel {
-    background: rgba(30, 41, 59, 0.85);
-    backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+  /* Neo-Brutalist Cards and Panels */
+  .brutal-card {
+    background-color: #ffffff;
+    border: 2px solid #111111;
+    box-shadow: 4px 4px 0px #111111;
   }
 
-  .cyber-panel {
-    background: rgba(17, 24, 39, 0.75);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.07);
+  .brutal-card-cream {
+    background-color: #FDF6E9;
+    border: 2px solid #111111;
+    box-shadow: 4px 4px 0px #111111;
   }
 
-  .glow-card:hover {
-    box-shadow: 0 0 25px rgba(99, 102, 241, 0.2);
-    border-color: rgba(99, 102, 241, 0.5);
+  .brutal-card-sm {
+    background-color: #ffffff;
+    border: 2px solid #111111;
+    box-shadow: 2px 2px 0px #111111;
   }
 
-  .glow-input:focus {
-    box-shadow: 0 0 15px rgba(99, 102, 241, 0.25);
+  .brutal-card-lg {
+    background-color: #ffffff;
+    border: 3px solid #111111;
+    box-shadow: 6px 6px 0px #111111;
+  }
+
+  /* Neo-Brutalist Interactive Buttons */
+  .brutal-btn {
+    border: 2px solid #111111;
+    box-shadow: 3px 3px 0px #111111;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .brutal-btn:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0px #111111;
+  }
+
+  .brutal-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0px #111111;
+  }
+
+  .brutal-btn-yellow {
+    background-color: #FFC93C;
+    color: #111111;
+    border: 2px solid #111111;
+    box-shadow: 3px 3px 0px #111111;
+    font-weight: 800;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .brutal-btn-yellow:hover {
+    background-color: #ffd460;
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0px #111111;
+  }
+
+  .brutal-btn-yellow:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0px #111111;
+  }
+
+  .brutal-btn-blue {
+    background-color: #4D6BFE;
+    color: #ffffff;
+    border: 2px solid #111111;
+    box-shadow: 3px 3px 0px #111111;
+    font-weight: 800;
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .brutal-btn-blue:hover {
+    background-color: #637efe;
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0px #111111;
+  }
+
+  .brutal-btn-blue:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0px #111111;
+  }
+
+  .brutal-badge {
+    border: 1.5px solid #111111;
+    box-shadow: 2px 2px 0px #111111;
+    font-weight: 800;
+  }
+
+  .brutal-input {
+    background-color: #ffffff;
+    border: 2px solid #111111;
+    box-shadow: 2px 2px 0px #111111;
+    outline: none;
+    color: #111111;
+  }
+
+  .brutal-input:focus {
+    box-shadow: 3px 3px 0px #4D6BFE;
+    border-color: #111111;
   }
 }
 
-/* Custom Scrollbar */
+/* Custom Neo-Brutalist Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+  background: #FDF6E9;
+  border-left: 2px solid #111111;
 }
 ::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 10px;
+  background: #111111;
+  border: 1px solid #FDF6E9;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: #4D6BFE;
 }
 
-@keyframes pulse-red {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+@keyframes pulse-brutal {
+  0%, 100% { 
+    background-color: #E63946;
+    color: #ffffff;
+  }
+  50% { 
+    background-color: #ffffff;
+    color: #E63946;
+  }
 }
 
 .timer-danger {
-  color: #ef4444 !important;
-  animation: pulse-red 1s infinite;
+  animation: pulse-brutal 1s infinite;
+  border: 2px solid #111111 !important;
 }
 
 .pdf-container iframe {
@@ -64,11 +154,7 @@ body,
   border: none;
 }
 
-/* ==========================================================================
-   Exam View Responsive Layout Controls (Mobile Sheet, Focus Mode & Sidebar)
-   ========================================================================== */
-
-/* Focus Mode: Expand PDF to 100% width and hide sidebar */
+/* Focus Mode */
 .focus-active .pdf-container {
   width: 100% !important;
   flex: 1 1 100% !important;
@@ -86,18 +172,17 @@ body,
     right: 0;
     bottom: 0;
     width: 100% !important;
-    height: 82dvh !important;
-    max-height: 85dvh !important;
+    height: 84dvh !important;
+    max-height: 86dvh !important;
     z-index: 50;
-    border-top-left-radius: 1.5rem;
-    border-top-right-radius: 1.5rem;
-    border-top: 1px solid rgba(99, 102, 241, 0.3);
-    box-shadow: 0 -15px 40px rgba(0, 0, 0, 0.85);
+    border-top: 3px solid #111111;
+    box-shadow: 0 -8px 0px rgba(17, 17, 17, 0.4), 0 -20px 30px rgba(0, 0, 0, 0.2);
     transform: translateY(100%);
     opacity: 0;
     pointer-events: none;
-    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
     display: flex !important;
+    background-color: #FDF6E9;
   }
 
   .sidebar-panel.sheet-open {

@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { ExamItem, AnswerKeyPart1, AnswerKeyPart2, AnswerKeyPart3 } from '../../types';
 import { 
   FilePlus, Save, Loader2, UploadCloud, Clock, Timer, Users, Layers, 
-  AlertCircle, FileCheck, CheckCircle2, X, ExternalLink, Eye, Info, Link as LinkIcon, Trash2, Cloud, Sparkles, RefreshCw
+  AlertCircle, FileCheck, CheckCircle2, X, ExternalLink, Eye, Info, Link as LinkIcon, Trash2, Cloud, Sparkles, RefreshCw,
+  FileSpreadsheet, Download, Zap, RotateCcw
 } from 'lucide-react';
 import { normalizePdfUrl, validatePdfInput } from '../../utils/pdfUtils';
 import { PdfViewer } from '../common/PdfViewer';
 import { uploadPdfToGoogleDrive, getApiUrl } from '../../services/storageService';
+import { QuickAnswerModal } from './QuickAnswerModal';
+import { downloadSampleExcelTemplate } from '../../utils/answerParser';
 
 interface ExamFormProps {
   initialData: ExamItem | null;
@@ -57,12 +60,66 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   const [driveUploadErrorMsg, setDriveUploadErrorMsg] = useState<string | null>(null);
 
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showQuickAnswerModal, setShowQuickAnswerModal] = useState(false);
+  const [importSuccessMsg, setImportSuccessMsg] = useState<string | null>(null);
 
   const [ansP1, setAnsP1] = useState<AnswerKeyPart1>(initialData?.answers?.p1 || {});
   const [ansP2, setAnsP2] = useState<AnswerKeyPart2>(initialData?.answers?.p2 || {});
   const [ansP3, setAnsP3] = useState<AnswerKeyPart3>(initialData?.answers?.p3 || {});
 
   const [isSaving, setIsSaving] = useState(false);
+
+  const handleApplyQuickAnswers = (data: {
+    p1: Record<number, 'A' | 'B' | 'C' | 'D'>;
+    p2: Record<number, Record<'a' | 'b' | 'c' | 'd', 'Đ' | 'S'>>;
+    p3: Record<number, string>;
+    suggestedCounts?: { numP1?: number; numP2?: number; numP3?: number };
+  }) => {
+    let p1Updated = { ...ansP1, ...data.p1 };
+    let p2Updated = { ...ansP2, ...data.p2 };
+    let p3Updated = { ...ansP3, ...data.p3 };
+
+    setAnsP1(p1Updated);
+    setAnsP2(p2Updated);
+    setAnsP3(p3Updated);
+
+    if (data.suggestedCounts) {
+      let changed = false;
+      if (data.suggestedCounts.numP1 && data.suggestedCounts.numP1 > numP1) {
+        setNumP1(data.suggestedCounts.numP1);
+        changed = true;
+      }
+      if (data.suggestedCounts.numP2 && data.suggestedCounts.numP2 > numP2) {
+        setNumP2(data.suggestedCounts.numP2);
+        changed = true;
+      }
+      if (data.suggestedCounts.numP3 && data.suggestedCounts.numP3 > numP3) {
+        setNumP3(data.suggestedCounts.numP3);
+        changed = true;
+      }
+      if (changed) {
+        setExamType('custom');
+      }
+    }
+
+    const c1 = Object.keys(data.p1).length;
+    const c2 = Object.keys(data.p2).length;
+    const c3 = Object.keys(data.p3).length;
+    setImportSuccessMsg(`Đã nạp thành công: ${c1} câu P1, ${c2} câu P2, ${c3} câu P3 vào đề thi!`);
+
+    setTimeout(() => {
+      setImportSuccessMsg(null);
+    }, 5000);
+  };
+
+  const handleClearAllAnswers = () => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ đáp án đang nhập?')) {
+      setAnsP1({});
+      setAnsP2({});
+      setAnsP3({});
+      setImportSuccessMsg(null);
+    }
+  };
 
   useEffect(() => {
     if (examType === 'fixed') {
@@ -256,14 +313,14 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="cyber-panel p-6 md:p-8 rounded-2xl shadow-2xl border border-slate-800">
-      <div className="flex justify-between items-center border-b border-slate-800 pb-5 mb-6">
+    <form onSubmit={handleSubmit} className="bg-white p-6 md:p-8 border-3 border-[#111111] shadow-[6px_6px_0px_#111111] text-[#111111]">
+      <div className="flex justify-between items-center border-b-2 border-[#111111] pb-5 mb-6">
         <div>
-          <h2 className="text-xl md:text-2xl font-extrabold text-white flex items-center gap-2">
-            <FilePlus className="w-6 h-6 text-indigo-500" />
+          <h2 className="text-xl md:text-2xl font-black uppercase text-[#111111] flex items-center gap-2">
+            <FilePlus className="w-6 h-6 text-[#4D6BFE]" />
             {initialData ? 'Cập Nhật Cấu Trúc & Phân Lớp Đề Thi' : 'Tạo Đề Thi Mới & Phân Cho Lớp Học'}
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs md:text-sm text-neutral-700 font-bold mt-1">
             Thiết lập đề thi PDF, đáp án chuẩn, ma trận câu hỏi và chỉ định lớp học sinh được làm bài.
           </p>
         </div>
@@ -273,20 +330,20 @@ export const ExamForm: React.FC<ExamFormProps> = ({
         {/* Left Column: Config Settings */}
         <div className="lg:col-span-5 space-y-6">
           {/* General info */}
-          <div className="bg-slate-900/60 p-5 rounded-2xl border border-slate-800 space-y-4">
-            <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-widest border-b border-slate-800 pb-2">
+          <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111] space-y-4">
+            <h3 className="text-xs font-black text-[#111111] uppercase tracking-widest border-b-2 border-[#111111] pb-2">
               1. Thông Tin Chung
             </h3>
             <div>
-              <label className="block text-slate-300 text-xs font-semibold mb-1.5 uppercase">
-                Tiêu Đề Đề Thi <span className="text-rose-400">*</span>
+              <label className="block text-[#111111] text-xs font-black mb-1.5 uppercase">
+                Tiêu Đề Đề Thi <span className="text-[#E63946]">*</span>
               </label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 required
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:border-indigo-500 text-xs font-medium"
+                className="w-full p-3 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[#111111] outline-none text-xs font-bold"
                 placeholder="VD: Đề thi khảo sát Toán Lớp 12A1..."
               />
             </div>
@@ -294,11 +351,11 @@ export const ExamForm: React.FC<ExamFormProps> = ({
             {/* DURATION SETTING WITH QUICK PRESET BUTTONS */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-slate-300 text-xs font-semibold uppercase flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-indigo-400" />
-                  Thời Gian Làm Bài (Phút) <span className="text-rose-400">*</span>
+                <label className="text-[#111111] text-xs font-black uppercase flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-[#4D6BFE]" />
+                  Thời Gian Làm Bài (Phút) <span className="text-[#E63946]">*</span>
                 </label>
-                <span className="text-xs font-extrabold text-indigo-300 bg-indigo-950/80 px-2.5 py-0.5 rounded-lg border border-indigo-700/60">
+                <span className="text-xs font-black text-[#111111] bg-[#FFC93C] px-2.5 py-0.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
                   {duration} Phút
                 </span>
               </div>
@@ -312,7 +369,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                 required
                 min={1}
                 max={360}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-white outline-none focus:border-indigo-500 text-sm font-bold mb-2"
+                className="w-full p-3 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[#111111] outline-none text-sm font-black mb-2"
                 placeholder="Nhập số phút làm bài (VD: 45, 60, 90)..."
               />
 
@@ -323,10 +380,10 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                     key={mins}
                     type="button"
                     onClick={() => setDuration(mins)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    className={`px-2.5 py-1 text-[11px] font-black uppercase transition-all border-2 border-[#111111] ${
                       duration === mins
-                        ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
-                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                        ? 'bg-[#4D6BFE] text-white shadow-[2px_2px_0px_#111111]'
+                        : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
                     }`}
                   >
                     {mins} phút
@@ -337,31 +394,31 @@ export const ExamForm: React.FC<ExamFormProps> = ({
           </div>
 
           {/* CRITICAL FEATURE: TARGET CLASS SELECTION */}
-          <div className="bg-indigo-950/40 p-5 rounded-2xl border border-indigo-800/80 space-y-4">
-            <div className="flex items-center justify-between border-b border-indigo-800/60 pb-2">
-              <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-widest flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-indigo-400" />
+          <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111] space-y-4">
+            <div className="flex items-center justify-between border-b-2 border-[#111111] pb-2">
+              <h3 className="text-xs font-black text-[#111111] uppercase tracking-widest flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-[#4D6BFE]" />
                 2. Chọn Lớp / Nhóm Học Sinh Được Làm Bài
               </h3>
             </div>
 
-            <p className="text-[11px] text-slate-300 leading-relaxed">
+            <p className="text-xs text-neutral-700 font-bold leading-relaxed">
               Tính năng phân lớp: Học sinh thuộc lớp được chọn mới nhìn thấy và làm bài thi này.
             </p>
 
             {/* Quick Class Selection Chips */}
             <div>
-              <label className="block text-[11px] font-bold text-indigo-300 mb-2 uppercase">
+              <label className="block text-[11px] font-black text-[#111111] mb-2 uppercase">
                 Chọn Nhanh Lớp Học Cho Đề Thi:
               </label>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => setTargetGroup('Tất cả')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  className={`px-3 py-1.5 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
                     targetGroup.toLowerCase().includes('tất cả')
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                      : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+                      ? 'bg-[#FFC93C] text-[#111111] shadow-[2px_2px_0px_#111111]'
+                      : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
                   }`}
                 >
                   Tất Cả Các Lớp
@@ -380,10 +437,10 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                         key={clsName}
                         type="button"
                         onClick={() => handleToggleClass(clsName)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                        className={`px-3 py-1.5 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
                           isSelected
-                            ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30'
-                            : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+                            ? 'bg-[#4D6BFE] text-white shadow-[2px_2px_0px_#111111]'
+                            : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
                         }`}
                       >
                         Lớp {clsName}
@@ -394,32 +451,32 @@ export const ExamForm: React.FC<ExamFormProps> = ({
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+              <label className="block text-[11px] font-bold text-neutral-700 mb-1">
                 Hoặc Nhập Tên Lớp Chỉ Định Cụ Thể (Phân cách bằng dấu phẩy):
               </label>
               <input
                 type="text"
                 value={targetGroup}
                 onChange={(e) => setTargetGroup(e.target.value)}
-                className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-bold outline-none focus:border-indigo-500"
+                className="w-full p-2.5 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs text-[#111111] font-black outline-none"
                 placeholder="VD: 12A1, 12A2"
               />
             </div>
           </div>
 
           {/* Exam Structure */}
-          <div className="bg-slate-900/60 p-5 rounded-2xl border border-slate-800 space-y-4">
-            <h3 className="text-xs font-bold text-cyan-400 uppercase tracking-widest border-b border-slate-800 pb-2">
+          <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111] space-y-4">
+            <h3 className="text-xs font-black text-[#111111] uppercase tracking-widest border-b-2 border-[#111111] pb-2">
               3. Cấu Trúc Ma Trận Câu Hỏi
             </h3>
             <div>
-              <label className="block text-slate-300 text-xs font-semibold mb-1.5 uppercase">
+              <label className="block text-[#111111] text-xs font-black mb-1.5 uppercase">
                 Hình Thức Đề Thi
               </label>
               <select
                 value={examType}
                 onChange={(e) => setExamType(e.target.value as any)}
-                className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-medium outline-none focus:border-cyan-500"
+                className="w-full p-3 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[#111111] text-xs font-black outline-none cursor-pointer"
               >
                 <option value="fixed">Mặc định Bộ GD&ĐT (12 câu P1 - 4 câu P2 - 6 câu P3)</option>
                 <option value="custom">Tùy biến số lượng câu hỏi</option>
@@ -427,35 +484,35 @@ export const ExamForm: React.FC<ExamFormProps> = ({
             </div>
 
             {examType === 'custom' && (
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800 border-dashed">
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t-2 border-[#111111]">
                 <div>
-                  <label className="block text-slate-400 text-[10px] font-bold mb-1">Số câu P1 (Trắc nghiệm)</label>
+                  <label className="block text-[#111111] text-[10px] font-black mb-1">Số câu P1 (Trắc nghiệm)</label>
                   <input
                     type="number"
                     min={0}
                     value={numP1}
                     onChange={(e) => setNumP1(Number(e.target.value))}
-                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs font-bold"
+                    className="w-full p-2 bg-white border-2 border-[#111111] text-[#111111] text-xs font-black"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 text-[10px] font-bold mb-1">Số câu P2 (Đúng/Sai)</label>
+                  <label className="block text-[#111111] text-[10px] font-black mb-1">Số câu P2 (Đúng/Sai)</label>
                   <input
                     type="number"
                     min={0}
                     value={numP2}
                     onChange={(e) => setNumP2(Number(e.target.value))}
-                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs font-bold"
+                    className="w-full p-2 bg-white border-2 border-[#111111] text-[#111111] text-xs font-black"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 text-[10px] font-bold mb-1">Số câu P3 (Điền ngắn)</label>
+                  <label className="block text-[#111111] text-[10px] font-black mb-1">Số câu P3 (Điền ngắn)</label>
                   <input
                     type="number"
                     min={0}
                     value={numP3}
                     onChange={(e) => setNumP3(Number(e.target.value))}
-                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs font-bold"
+                    className="w-full p-2 bg-white border-2 border-[#111111] text-[#111111] text-xs font-black"
                   />
                 </div>
               </div>
@@ -463,48 +520,48 @@ export const ExamForm: React.FC<ExamFormProps> = ({
           </div>
 
           {/* Timing & File upload */}
-          <div className="bg-slate-900/60 p-5 rounded-2xl border border-slate-800 space-y-4">
-            <h3 className="text-xs font-bold text-amber-400 uppercase tracking-widest border-b border-slate-800 pb-2">
+          <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111] space-y-4">
+            <h3 className="text-xs font-black text-[#111111] uppercase tracking-widest border-b-2 border-[#111111] pb-2">
               4. Giờ Mở Đề & Tải File Đề Thi PDF
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-slate-400 text-[11px] font-semibold mb-1 uppercase">Giờ Mở Đề</label>
+                <label className="block text-neutral-800 text-[11px] font-black mb-1 uppercase">Giờ Mở Đề</label>
                 <input
                   type="datetime-local"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
-                  className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs"
+                  className="w-full p-2.5 bg-white border-2 border-[#111111] text-[#111111] font-bold text-xs"
                 />
               </div>
               <div>
-                <label className="block text-slate-400 text-[11px] font-semibold mb-1 uppercase">Giờ Đóng Đề</label>
+                <label className="block text-neutral-800 text-[11px] font-black mb-1 uppercase">Giờ Đóng Đề</label>
                 <input
                   type="datetime-local"
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
-                  className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs"
+                  className="w-full p-2.5 bg-white border-2 border-[#111111] text-[#111111] font-bold text-xs"
                 />
               </div>
             </div>
 
             {/* Section 4: File PDF Display / Upload */}
             {hasExistingFile && !isReplacingFile ? (
-              /* EXISTING FILE CARD - CLEAR & NO FORCE TO UPLOAD */
-              <div className="p-4 bg-emerald-950/20 border border-emerald-500/40 rounded-xl space-y-3">
+              /* EXISTING FILE CARD */
+              <div className="p-4 bg-white border-2 border-[#111111] shadow-[3px_3px_0px_#111111] space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-emerald-300 font-bold text-xs uppercase">
-                    <FileCheck className="w-4 h-4 text-emerald-400" />
+                  <div className="flex items-center gap-1.5 text-[#0F9D58] font-black text-xs uppercase">
+                    <FileCheck className="w-4 h-4 text-[#0F9D58]" />
                     <span>File Đề Thi Đã Được Lưu</span>
                   </div>
-                  <span className="text-[10px] bg-emerald-900/60 text-emerald-300 px-2 py-0.5 rounded-md border border-emerald-500/30 font-semibold flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Đang Hoạt Động
+                  <span className="text-[10px] bg-[#0F9D58] text-white px-2 py-0.5 border-2 border-[#111111] font-black flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-white" /> Đang Hoạt Động
                   </span>
                 </div>
 
-                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                <div className="bg-[#FDF6E9] p-3 border-2 border-[#111111] space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-bold text-slate-200 truncate">
+                    <p className="text-xs font-black text-[#111111] truncate">
                       {initialFileLink.startsWith('data:') 
                         ? '📄 File PDF đã lưu trong hệ thống' 
                         : (initialFileLink.includes('drive.google.com') ? '☁️ File PDF trên Google Drive' : initialFileLink)}
@@ -513,7 +570,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowPreviewModal(true)}
-                        className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                        className="px-2.5 py-1.5 bg-[#4D6BFE] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs font-black flex items-center gap-1 active:translate-x-[1px] active:translate-y-[1px]"
                         title="Xem thử đề thi"
                       >
                         <Eye className="w-3.5 h-3.5" /> Xem thử PDF
@@ -521,16 +578,16 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                       <button
                         type="button"
                         onClick={() => setIsReplacingFile(true)}
-                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1 border border-slate-700 transition-colors"
+                        className="px-2.5 py-1.5 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs font-black flex items-center gap-1 active:translate-x-[1px] active:translate-y-[1px]"
                         title="Thay đổi sang file đề khác"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" /> Đổi file khác
+                        <RefreshCw className="w-3.5 h-3.5" /> Đổi file
                       </button>
                     </div>
                   </div>
 
-                  <p className="text-[11px] text-emerald-400/90 leading-relaxed bg-emerald-950/40 p-2 rounded-lg border border-emerald-800/30">
-                    💡 <strong>Lưu ý:</strong> Đề thi đã có sẵn file đề. Bạn có thể thoải mái chỉnh sửa <strong>thời gian làm bài, giờ mở/đóng đề, lớp học, đáp án</strong> rồi bấm <strong>"Lưu & Phân Lớp Đề Thi"</strong> ở cuối trang mà <u>không cần</u> tải lại file.
+                  <p className="text-xs text-neutral-800 font-bold leading-relaxed bg-white p-2 border-2 border-[#111111]">
+                    💡 <strong>Lưu ý:</strong> Đề thi đã có sẵn file đề. Bạn có thể thoải mái chỉnh sửa <strong>thời gian làm bài, giờ mở/đóng đề, lớp học, đáp án</strong> rồi bấm <strong>"Lưu & Phân Lớp Đề Thi"</strong> mà <u>không cần</u> tải lại file.
                   </p>
                 </div>
               </div>
@@ -538,9 +595,9 @@ export const ExamForm: React.FC<ExamFormProps> = ({
               /* UPLOAD / CHANGE FILE SECTION */
               <div className="space-y-4">
                 {hasExistingFile && isReplacingFile && (
-                  <div className="flex items-center justify-between p-2.5 bg-slate-800/80 rounded-xl border border-slate-700">
-                    <span className="text-xs text-amber-300 font-semibold flex items-center gap-1.5">
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-400" /> Đang ở chế độ thay đổi file đề mới
+                  <div className="flex items-center justify-between p-2.5 bg-[#FFC93C] border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                    <span className="text-xs text-[#111111] font-black flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-[#111111]" /> Đang ở chế độ thay đổi file đề mới
                     </span>
                     <button
                       type="button"
@@ -549,48 +606,48 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                         setUploadFile(null);
                         setFileLink(isInitialBase64 ? '' : initialFileLink);
                       }}
-                      className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-semibold"
+                      className="px-2.5 py-1 bg-white text-[#111111] border-2 border-[#111111] text-xs font-black"
                     >
                       Giữ lại file cũ
                     </button>
                   </div>
                 )}
 
-                {/* Upload PDF File Directly & Google Drive Cloud Storage */}
-                <div className="p-4 bg-purple-950/20 border border-purple-900/40 rounded-xl space-y-3">
-                  <label className="block text-purple-300 font-bold text-xs uppercase flex items-center justify-between">
+                {/* Upload PDF File Directly */}
+                <div className="p-4 bg-white border-2 border-[#111111] shadow-[3px_3px_0px_#111111] space-y-3">
+                  <label className="block text-[#111111] font-black text-xs uppercase flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
-                      <UploadCloud className="w-4 h-4 text-purple-400" /> Cách 1: Tải File PDF Mới & Đẩy Lên Drive
+                      <UploadCloud className="w-4 h-4 text-[#4D6BFE]" /> Cách 1: Tải File PDF Mới & Đẩy Lên Drive
                     </span>
-                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
-                      <Cloud className="w-3 h-3 text-emerald-400" /> Tự động đẩy lên Google Drive
+                    <span className="text-[10px] text-[#0F9D58] font-black flex items-center gap-1">
+                      <Cloud className="w-3 h-3 text-[#0F9D58]" /> Tự động đẩy lên Google Drive
                     </span>
                   </label>
 
                   {/* Upload Status Banner */}
                   {isUploadingToDrive && (
-                    <div className="p-3 bg-indigo-950/70 border border-indigo-500/50 rounded-xl flex items-center gap-2.5 text-indigo-200 text-xs">
-                      <Loader2 className="w-4 h-4 text-indigo-400 animate-spin shrink-0" />
+                    <div className="p-3 bg-[#FDF6E9] border-2 border-[#111111] flex items-center gap-2.5 text-[#111111] text-xs font-bold">
+                      <Loader2 className="w-4 h-4 text-[#4D6BFE] animate-spin shrink-0" />
                       <div>
-                        <p className="font-bold text-white">Đang tải file lên Google Drive qua Apps Script...</p>
-                        <p className="text-[10px] text-indigo-300">File sẽ được lưu vào thư mục [DeThi_Online_Drive] và tạo link công khai.</p>
+                        <p className="font-black text-[#111111]">Đang tải file lên Google Drive qua Apps Script...</p>
+                        <p className="text-[10px] text-neutral-700">File sẽ được lưu vào thư mục [DeThi_Online_Drive] và tạo link công khai.</p>
                       </div>
                     </div>
                   )}
 
                   {driveUploadSuccessMsg && (
-                    <div className="p-3 bg-emerald-950/60 border border-emerald-500/50 rounded-xl flex items-start gap-2 text-emerald-300 text-xs">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="p-3 bg-[#0F9D58]/10 border-2 border-[#0F9D58] flex items-start gap-2 text-[#0F9D58] text-xs">
+                      <CheckCircle2 className="w-4 h-4 text-[#0F9D58] shrink-0 mt-0.5" />
                       <div className="flex-1">
-                        <p className="font-bold text-white">Đã tải lên Google Drive thành công!</p>
-                        <p className="text-[10px] text-emerald-300 mt-0.5">
+                        <p className="font-black text-[#0F9D58]">Đã tải lên Google Drive thành công!</p>
+                        <p className="text-[10px] font-bold text-neutral-800 mt-0.5">
                           File đã được lưu vào thư mục <strong>DeThi_Online_Drive</strong> và link xem trước được gắn vào đề thi.
                         </p>
                         <div className="flex items-center gap-3 mt-2">
                           <button
                             type="button"
                             onClick={() => setShowPreviewModal(true)}
-                            className="text-[11px] font-bold text-cyan-300 hover:text-white underline flex items-center gap-1"
+                            className="text-[11px] font-black text-[#4D6BFE] underline flex items-center gap-1"
                           >
                             <Eye className="w-3.5 h-3.5" /> Xem thử PDF
                           </button>
@@ -599,7 +656,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                               href={fileLink}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-[11px] font-bold text-indigo-300 hover:text-white underline flex items-center gap-1"
+                              className="text-[11px] font-black text-[#111111] underline flex items-center gap-1"
                             >
                               <ExternalLink className="w-3.5 h-3.5" /> Mở trên Google Drive
                             </a>
@@ -610,12 +667,12 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                   )}
 
                   {driveUploadErrorMsg && (
-                    <div className="p-3 bg-amber-950/50 border border-amber-500/40 rounded-xl flex items-start gap-2 text-amber-300 text-xs">
-                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="p-3 bg-[#FFC93C]/20 border-2 border-[#111111] flex items-start gap-2 text-[#111111] text-xs">
+                      <AlertCircle className="w-4 h-4 text-[#111111] shrink-0 mt-0.5" />
                       <div className="flex-1">
-                        <p className="font-bold text-amber-200">Thông báo tải lên Google Drive:</p>
-                        <p className="text-[11px] text-amber-300/90 mt-0.5 leading-relaxed">{driveUploadErrorMsg}</p>
-                        <p className="text-[10px] text-slate-400 mt-1">
+                        <p className="font-black text-[#111111]">Thông báo tải lên Google Drive:</p>
+                        <p className="text-[11px] font-bold text-neutral-800 mt-0.5 leading-relaxed">{driveUploadErrorMsg}</p>
+                        <p className="text-[10px] font-bold text-neutral-600 mt-1">
                           💡 Hệ thống vẫn lưu trữ file PDF trực tiếp để học sinh làm bài bình thường.
                         </p>
                       </div>
@@ -623,20 +680,20 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                   )}
 
                   {uploadFile ? (
-                    <div className="p-3 bg-slate-950 border border-emerald-500/40 rounded-xl space-y-2.5">
+                    <div className="p-3 bg-[#FDF6E9] border-2 border-[#111111] space-y-2.5">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2.5 overflow-hidden">
-                          <FileCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                          <FileCheck className="w-5 h-5 text-[#0F9D58] shrink-0" />
                           <div className="truncate">
-                            <p className="text-xs font-bold text-emerald-300 truncate">{uploadFile.name}</p>
-                            <p className="text-[10px] text-slate-400">{uploadFile.size}</p>
+                            <p className="text-xs font-black text-[#111111] truncate">{uploadFile.name}</p>
+                            <p className="text-[10px] font-bold text-neutral-600">{uploadFile.size}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <button
                             type="button"
                             onClick={() => setShowPreviewModal(true)}
-                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
+                            className="px-2.5 py-1 bg-[#4D6BFE] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs font-black flex items-center gap-1"
                             title="Xem thử file PDF"
                           >
                             <Eye className="w-3.5 h-3.5" /> Xem thử
@@ -644,7 +701,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                           <button
                             type="button"
                             onClick={handleRemoveUploadedFile}
-                            className="p-1.5 text-rose-400 hover:text-white hover:bg-rose-600/30 rounded-lg transition-colors"
+                            className="p-1.5 bg-white text-[#E63946] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] hover:bg-[#E63946] hover:text-white transition-colors"
                             title="Xóa file tải lên"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -654,12 +711,12 @@ export const ExamForm: React.FC<ExamFormProps> = ({
 
                       {/* Manual Push to Drive Button if not uploaded yet */}
                       {!isUploadingToDrive && (
-                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                          <span className="text-[10px] text-slate-400">Đã chọn file PDF mới</span>
+                        <div className="pt-2 border-t-2 border-[#111111] flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-neutral-700">Đã chọn file PDF mới</span>
                           <button
                             type="button"
                             onClick={() => handleUploadToGoogleDriveDirect(uploadFile.base64, uploadFile.name)}
-                            className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-md shadow-purple-600/20"
+                            className="px-3 py-1.5 bg-[#FFC93C] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[11px] font-black flex items-center gap-1.5 transition-all"
                           >
                             <Cloud className="w-3.5 h-3.5" /> Đẩy Lên Google Drive Ngay
                           </button>
@@ -672,9 +729,9 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                         type="file"
                         accept=".pdf"
                         onChange={handleFileUpload}
-                        className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-purple-600 file:text-white hover:file:bg-purple-500 cursor-pointer"
+                        className="w-full text-xs text-neutral-800 font-bold file:mr-3 file:py-2 file:px-4 file:border-2 file:border-[#111111] file:shadow-[2px_2px_0px_#111111] file:text-xs file:font-black file:bg-[#FFC93C] file:text-[#111111] hover:file:bg-[#ffd460] cursor-pointer"
                       />
-                      <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+                      <p className="text-[10px] font-bold text-neutral-700 mt-1.5 leading-relaxed">
                         Chọn file PDF đề thi từ máy tính. Hệ thống sẽ tự động lưu và đẩy lên thư mục <strong>DeThi_Online_Drive</strong> trên Google Drive của giáo viên.
                       </p>
                     </div>
@@ -684,8 +741,8 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                 {/* Paste Link Option */}
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-slate-400 text-xs font-semibold mb-1.5 uppercase flex items-center gap-1">
-                      <LinkIcon className="w-3.5 h-3.5 text-indigo-400" /> Cách 2: Hoặc Dán Link Google Drive Đề Thi
+                    <label className="block text-[#111111] text-xs font-black mb-1.5 uppercase flex items-center gap-1">
+                      <LinkIcon className="w-3.5 h-3.5 text-[#4D6BFE]" /> Cách 2: Hoặc Dán Link Google Drive Đề Thi
                     </label>
                     <input
                       type="text"
@@ -696,29 +753,29 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                       }}
                       disabled={!!uploadFile}
                       placeholder="https://drive.google.com/file/d/.../view"
-                      className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-indigo-300 font-mono disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="w-full p-2.5 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs text-[#111111] font-mono font-bold disabled:opacity-40 disabled:cursor-not-allowed"
                     />
 
                     {/* Validation Status Indicator */}
                     {!uploadFile && fileLink.trim() && (
-                      <div className={`mt-2 p-2.5 rounded-xl border text-xs flex items-start gap-2 ${
+                      <div className={`mt-2 p-2.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs flex items-start gap-2 ${
                         pdfValidation.isValid 
-                          ? 'bg-emerald-950/30 border-emerald-800/60 text-emerald-300' 
-                          : 'bg-rose-950/30 border-rose-800/60 text-rose-300'
+                          ? 'bg-[#0F9D58]/10 text-[#0F9D58]' 
+                          : 'bg-[#E63946]/10 text-[#E63946]'
                       }`}>
                         {pdfValidation.isValid ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                          <CheckCircle2 className="w-4 h-4 text-[#0F9D58] shrink-0 mt-0.5" />
                         ) : (
-                          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                          <AlertCircle className="w-4 h-4 text-[#E63946] shrink-0 mt-0.5" />
                         )}
                         <div className="flex-1">
-                          <p className="font-semibold">{pdfValidation.message}</p>
+                          <p className="font-black">{pdfValidation.message}</p>
                           {pdfValidation.isValid && (
                             <div className="flex items-center gap-2 mt-1.5">
                               <button
                                 type="button"
                                 onClick={() => setShowPreviewModal(true)}
-                                className="text-[11px] font-bold underline text-indigo-300 hover:text-white flex items-center gap-1"
+                                className="text-[11px] font-black underline text-[#4D6BFE] flex items-center gap-1"
                               >
                                 <Eye className="w-3 h-3" /> Xem trước khung đề
                               </button>
@@ -732,41 +789,100 @@ export const ExamForm: React.FC<ExamFormProps> = ({
               </div>
             )}
 
-              <div>
-                <label className="block text-slate-400 text-xs font-semibold mb-1.5 uppercase flex items-center gap-1">
-                  <ExternalLink className="w-3.5 h-3.5 text-emerald-400" /> Link File Lời Giải Chi Tiết (Tùy chọn)
-                </label>
-                <input
-                  type="text"
-                  value={explainLink}
-                  onChange={(e) => setExplainLink(e.target.value)}
-                  placeholder="https://drive.google.com/... (Xem sau khi nộp bài)"
-                  className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-emerald-300 font-mono"
-                />
-              </div>
+            <div>
+              <label className="block text-[#111111] text-xs font-black mb-1.5 uppercase flex items-center gap-1">
+                <ExternalLink className="w-3.5 h-3.5 text-[#0F9D58]" /> Link File Lời Giải Chi Tiết (Tùy chọn)
+              </label>
+              <input
+                type="text"
+                value={explainLink}
+                onChange={(e) => setExplainLink(e.target.value)}
+                placeholder="https://drive.google.com/... (Xem sau khi nộp bài)"
+                className="w-full p-2.5 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs text-[#111111] font-mono font-bold"
+              />
             </div>
           </div>
+        </div>
 
         {/* Right Column: Answer Keys Setup */}
         <div className="lg:col-span-7 space-y-6 max-h-[780px] overflow-y-auto custom-scroll pr-2">
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider bg-slate-900 p-3 rounded-xl border border-slate-800">
-            5. Nhập Đáp Án Chuẩn Cho Đề Thi
-          </h3>
+          {/* Section 5 Header & Quick Import Action Bar */}
+          <div className="bg-[#FDF6E9] p-4 border-2 border-[#111111] shadow-[4px_4px_0px_#111111] space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-[#111111] pb-3">
+              <div>
+                <h3 className="text-sm font-black text-[#111111] uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 bg-[#FFC93C] border-2 border-[#111111]"></span>
+                  5. Nhập Đáp Án Chuẩn Cho Đề Thi
+                </h3>
+                <p className="text-[11px] font-bold text-neutral-600 mt-0.5">
+                  Chọn đáp án thủ công bên dưới hoặc dùng công cụ nạp tự động nhanh.
+                </p>
+              </div>
+
+              {/* MAIN QUICK IMPORT BUTTON */}
+              <button
+                type="button"
+                onClick={() => setShowQuickAnswerModal(true)}
+                className="px-4 py-2 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] text-xs font-black uppercase flex items-center gap-2 active:translate-x-[1px] active:translate-y-[1px] transition-all cursor-pointer"
+              >
+                <Zap className="w-4 h-4 text-[#111111] fill-[#111111]" />
+                <span>Nạp Đáp Án Nhanh (Excel / Word / Dán)</span>
+              </button>
+            </div>
+
+            {/* Sub Tools: Download Excel template & Clear */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <button
+                type="button"
+                onClick={downloadSampleExcelTemplate}
+                className="px-3 py-1.5 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[11px] font-black uppercase flex items-center gap-1.5 active:translate-x-[1px] active:translate-y-[1px] transition-all"
+              >
+                <Download className="w-3.5 h-3.5 text-[#0F9D58]" /> Tải File Mẫu Excel (.xlsx)
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClearAllAnswers}
+                className="px-3 py-1.5 bg-white hover:bg-[#E63946] hover:text-white text-[#E63946] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[11px] font-black uppercase flex items-center gap-1.5 transition-colors"
+                title="Xóa tất cả các lựa chọn đáp án"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Xóa Tất Cả Đáp Án
+              </button>
+            </div>
+
+            {/* Success notification banner */}
+            {importSuccessMsg && (
+              <div className="p-3 bg-[#0F9D58]/10 border-2 border-[#0F9D58] flex items-center justify-between gap-2 text-[#0F9D58] text-xs font-black shadow-[2px_2px_0px_#111111]">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{importSuccessMsg}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setImportSuccessMsg(null)}
+                  className="p-1 hover:bg-[#0F9D58]/20 rounded"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Part I Answers */}
           {numP1 > 0 && (
-            <div className="bg-indigo-950/20 p-5 rounded-2xl border border-indigo-800/40">
-              <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3">
+            <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111]">
+              <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-3 h-3 bg-[#4D6BFE] border border-[#111111]"></span>
                 Phần I: Đáp Án Trắc Nghiệm ({numP1} câu)
               </h4>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {Array.from({ length: numP1 }, (_, i) => i + 1).map((qNum) => (
-                  <div key={qNum} className="flex items-center gap-2 bg-slate-950 p-2 rounded-xl border border-slate-800">
-                    <span className="text-xs font-bold text-slate-400 w-8 text-center">C.{qNum}</span>
+                  <div key={qNum} className="flex items-center gap-2 bg-white p-2 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                    <span className="text-xs font-black text-[#111111] w-8 text-center">C.{qNum}</span>
                     <select
                       value={ansP1[qNum] || ''}
                       onChange={(e) => setAnsP1({ ...ansP1, [qNum]: e.target.value as any })}
-                      className="flex-1 bg-slate-900 text-white text-xs font-bold p-1.5 rounded border border-slate-800 outline-none focus:border-indigo-500"
+                      className="flex-1 bg-[#FDF6E9] text-[#111111] text-xs font-black p-1.5 border-2 border-[#111111] outline-none cursor-pointer"
                     >
                       <option value="">Chọn</option>
                       <option value="A">A</option>
@@ -782,18 +898,19 @@ export const ExamForm: React.FC<ExamFormProps> = ({
 
           {/* Part II Answers */}
           {numP2 > 0 && (
-            <div className="bg-cyan-950/20 p-5 rounded-2xl border border-cyan-800/40">
-              <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-3">
+            <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111]">
+              <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-3 h-3 bg-[#FFC93C] border border-[#111111]"></span>
                 Phần II: Đáp Án Đúng / Sai ({numP2} câu)
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {Array.from({ length: numP2 }, (_, i) => i + 1).map((qNum) => (
-                  <div key={qNum} className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                    <span className="text-xs font-bold text-slate-300 block mb-2 border-b border-slate-800 pb-1">Câu {qNum}</span>
+                  <div key={qNum} className="bg-white p-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                    <span className="text-xs font-black text-[#111111] block mb-2 border-b-2 border-[#111111] pb-1">Câu {qNum}</span>
                     <div className="grid grid-cols-2 gap-2">
                       {(['a', 'b', 'c', 'd'] as const).map((sub) => (
-                        <div key={sub} className="flex items-center gap-2 bg-slate-900 p-1.5 rounded-lg border border-slate-800">
-                          <span className="text-xs font-bold uppercase w-4 text-slate-400">{sub}</span>
+                        <div key={sub} className="flex items-center gap-2 bg-[#FDF6E9] p-1.5 border-2 border-[#111111]">
+                          <span className="text-xs font-black uppercase w-4 text-[#111111]">{sub}</span>
                           <select
                             value={ansP2[qNum]?.[sub] || ''}
                             onChange={(e) =>
@@ -802,7 +919,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                                 [qNum]: { ...(ansP2[qNum] || {}), [sub]: e.target.value as any },
                               })
                             }
-                            className="flex-1 bg-slate-950 text-white text-xs font-bold p-1 rounded outline-none"
+                            className="flex-1 bg-white text-[#111111] text-xs font-black p-1 border-2 border-[#111111] outline-none cursor-pointer"
                           >
                             <option value="">-</option>
                             <option value="Đ">Đúng</option>
@@ -819,20 +936,21 @@ export const ExamForm: React.FC<ExamFormProps> = ({
 
           {/* Part III Answers */}
           {numP3 > 0 && (
-            <div className="bg-purple-950/20 p-5 rounded-2xl border border-purple-800/40">
-              <h4 className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-3">
+            <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111]">
+              <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider mb-3 flex items-center gap-2">
+                <span className="w-3 h-3 bg-[#0F9D58] border border-[#111111]"></span>
                 Phần III: Đáp Án Trả Lời Ngắn ({numP3} câu)
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {Array.from({ length: numP3 }, (_, i) => i + 1).map((qNum) => (
-                  <div key={qNum} className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800">
-                    <span className="text-xs font-bold text-slate-400 w-10 text-center">C.{qNum}</span>
+                  <div key={qNum} className="flex items-center gap-2 bg-white p-2.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                    <span className="text-xs font-black text-[#111111] w-10 text-center">C.{qNum}</span>
                     <input
                       type="text"
                       value={ansP3[qNum] || ''}
                       onChange={(e) => setAnsP3({ ...ansP3, [qNum]: e.target.value })}
-                      className="flex-1 bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-white text-xs font-bold outline-none focus:border-purple-500"
-                      placeholder="Đáp số chuẩn (VD: 15)..."
+                      className="flex-1 bg-[#FDF6E9] border-2 border-[#111111] p-1.5 text-[#111111] text-xs font-black outline-none"
+                      placeholder="Đáp số (VD: 15)..."
                     />
                   </div>
                 ))}
@@ -843,18 +961,18 @@ export const ExamForm: React.FC<ExamFormProps> = ({
       </div>
 
       {/* Action Buttons */}
-      <div className="flex justify-end gap-3 mt-8 pt-5 border-t border-slate-800">
+      <div className="flex justify-end gap-3 mt-8 pt-5 border-t-2 border-[#111111]">
         <button
           type="button"
           onClick={onCancel}
-          className="px-6 py-3 rounded-xl font-bold uppercase text-xs tracking-wider bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
+          className="px-6 py-3 font-black uppercase text-xs tracking-wider bg-white text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] hover:bg-[#FDF6E9] active:translate-x-[1px] active:translate-y-[1px] transition-all"
         >
           Hủy Bỏ
         </button>
         <button
           type="submit"
           disabled={isSaving}
-          className="px-6 py-3 rounded-xl font-bold uppercase text-xs tracking-wider bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-lg shadow-indigo-600/20 hover:from-indigo-500 hover:to-cyan-500 transition-all flex items-center gap-2 disabled:opacity-50"
+          className="px-6 py-3 font-black uppercase text-xs tracking-wider bg-[#FFC93C] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] hover:bg-[#ffd460] active:translate-x-[1px] active:translate-y-[1px] transition-all flex items-center gap-2 disabled:opacity-50"
         >
           {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {isSaving ? 'Đang lưu...' : 'Lưu & Phân Lớp Đề Thi'}
@@ -863,28 +981,28 @@ export const ExamForm: React.FC<ExamFormProps> = ({
 
       {/* PDF Preview Modal for Teacher */}
       {showPreviewModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 w-full max-w-4xl h-[85vh] rounded-2xl flex flex-col overflow-hidden shadow-2xl">
-            <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-[#111111]/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border-3 border-[#111111] shadow-[8px_8px_0px_#111111] w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden">
+            <div className="p-4 bg-[#FDF6E9] border-b-2 border-[#111111] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <FileCheck className="w-5 h-5 text-indigo-400" />
-                <h3 className="font-bold text-sm text-white">Xem Trước Đề Thi PDF Giáo Viên Thiết Lập</h3>
+                <FileCheck className="w-5 h-5 text-[#4D6BFE]" />
+                <h3 className="font-black text-sm text-[#111111] uppercase">Xem Trước Đề Thi PDF Giáo Viên Thiết Lập</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowPreviewModal(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg"
+                className="p-1.5 bg-white text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] hover:bg-[#E63946] hover:text-white transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="flex-1 bg-slate-950 p-2 overflow-hidden flex flex-col">
+            <div className="flex-1 bg-[#FDF6E9] p-4 overflow-hidden flex flex-col">
               {effectivePdfData ? (
-                <div className="flex-1 w-full h-full rounded-xl overflow-hidden">
+                <div className="flex-1 w-full h-full border-2 border-[#111111] shadow-[3px_3px_0px_#111111] overflow-hidden">
                   <PdfViewer fileUrl={effectivePdfData} title={title || 'Xem trước đề thi'} />
                 </div>
               ) : (
-                <div className="flex flex-col items-center justify-center h-full text-slate-500">
+                <div className="flex flex-col items-center justify-center h-full text-neutral-600 font-bold">
                   <AlertCircle className="w-10 h-10 mb-2" />
                   <p>Chưa có dữ liệu PDF để xem trước.</p>
                 </div>
@@ -893,6 +1011,18 @@ export const ExamForm: React.FC<ExamFormProps> = ({
           </div>
         </div>
       )}
+
+      {/* Quick Answer Importer Modal (Excel / Word / Text Paste) */}
+      <QuickAnswerModal
+        isOpen={showQuickAnswerModal}
+        onClose={() => setShowQuickAnswerModal(false)}
+        onApply={handleApplyQuickAnswers}
+        currentCounts={{
+          numP1,
+          numP2,
+          numP3,
+        }}
+      />
     </form>
   );
 };

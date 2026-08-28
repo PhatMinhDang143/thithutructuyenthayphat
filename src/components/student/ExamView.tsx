@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppUser, ExamItem, StudentAnswers } from '../../types';
 import { 
   Clock, Minimize2, Maximize2, User, Flag, Check, Edit3, X, 
-  AlertTriangle, Send, FileText, AlertCircle, Eye
+  AlertTriangle, Send, FileText, AlertCircle, Eye, Bookmark
 } from 'lucide-react';
 import { PdfViewer } from '../common/PdfViewer';
 
@@ -26,11 +26,11 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(window.innerWidth > 768);
 
   // Draggable Floating Button on Mobile
-  const [btnPos, setBtnPos] = useState({ x: window.innerWidth - 170, y: window.innerHeight - 80 });
+  const [btnPos, setBtnPos] = useState({ x: window.innerWidth - 175, y: window.innerHeight - 85 });
   const btnDrag = useRef({ isDragging: false, startX: 0, startY: 0, initialX: 0, initialY: 0, hasMoved: false });
 
   useEffect(() => {
-    const updatePos = () => setBtnPos({ x: window.innerWidth - 170, y: window.innerHeight - 80 });
+    const updatePos = () => setBtnPos({ x: window.innerWidth - 175, y: window.innerHeight - 85 });
     window.addEventListener('resize', updatePos);
     return () => window.removeEventListener('resize', updatePos);
   }, []);
@@ -50,7 +50,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     const dx = e.clientX - btnDrag.current.startX;
     const dy = e.clientY - btnDrag.current.startY;
     if (Math.abs(dx) > 5 || Math.abs(dy) > 5) btnDrag.current.hasMoved = true;
-    let newX = Math.max(0, Math.min(btnDrag.current.initialX + dx, window.innerWidth - 160));
+    let newX = Math.max(0, Math.min(btnDrag.current.initialX + dx, window.innerWidth - 165));
     let newY = Math.max(60, Math.min(btnDrag.current.initialY + dy, window.innerHeight - 60));
     setBtnPos({ x: newX, y: newY });
   };
@@ -63,7 +63,6 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
 
   // Exam Draft State & Auto Save
   const storageKey = `exam_draft_${exam.id}_${user.username}`;
-  const [phase, setPhase] = useState<1 | 2>(2);
   const [timeLeft, setTimeLeft] = useState(exam.duration * 60);
   const [cheatCount, setCheatCount] = useState(0);
 
@@ -96,9 +95,9 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
 
   // Auto Save Draft
   useEffect(() => {
-    const draftData = { ansPart1, ansPart2, ansPart3, flaggedQuestions, phase, timeLeft, cheatCount };
+    const draftData = { ansPart1, ansPart2, ansPart3, flaggedQuestions, timeLeft, cheatCount };
     localStorage.setItem(storageKey, JSON.stringify(draftData));
-  }, [ansPart1, ansPart2, ansPart3, flaggedQuestions, phase, timeLeft, cheatCount]);
+  }, [ansPart1, ansPart2, ansPart3, flaggedQuestions, timeLeft, cheatCount]);
 
   // Anti-cheat Visibility Tracking
   useEffect(() => {
@@ -147,27 +146,31 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
   const isDanger = timeLeft < 300;
 
   return (
-    <div className={`h-[100dvh] w-full flex flex-col bg-[#0b1121] overflow-hidden ${isFocusMode ? 'focus-active' : ''}`}>
-      {/* Top Bar */}
-      <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-3 md:px-6 shrink-0 z-40 shadow-md">
-        <div className="flex items-center gap-2 md:gap-4">
+    <div className={`h-[100dvh] w-full flex flex-col bg-[#FDF6E9] text-[#111111] overflow-hidden ${isFocusMode ? 'focus-active' : ''}`}>
+      {/* Top Bar - Neo-Brutalist High Contrast Header */}
+      <header className="h-14 bg-white border-b-2 border-[#111111] flex items-center justify-between px-3 md:px-6 shrink-0 z-40 shadow-[0_2px_0px_#111111]">
+        <div className="flex items-center gap-2 md:gap-4 min-w-0">
           <button
             onClick={() => setIsFocusMode(!isFocusMode)}
-            className={`p-2 rounded-lg transition-colors ${isFocusMode ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}
+            className={`p-2 border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all ${
+              isFocusMode ? 'bg-[#FFC93C] text-[#111111]' : 'bg-[#FDF6E9] text-[#111111] hover:bg-white'
+            }`}
             title={isFocusMode ? "Thu nhỏ đề thi" : "Phóng to đề thi toàn màn hình"}
           >
             {isFocusMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
-          <span className="font-bold text-xs md:text-sm text-indigo-400 uppercase truncate max-w-[150px] sm:max-w-xs md:max-w-md">
+          <span className="font-black text-xs md:text-sm text-[#111111] uppercase truncate max-w-[150px] sm:max-w-xs md:max-w-md">
             {exam.title}
           </span>
         </div>
 
         {/* Timer */}
-        <div className="flex flex-col items-center justify-center bg-slate-800/90 border border-slate-700/60 px-3 md:px-4 py-1 rounded-xl min-w-[105px] md:min-w-[120px]">
-          <p className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Thời Gian</p>
-          <p className={`text-sm md:text-base font-black font-mono tracking-tight flex items-center gap-1 ${isDanger ? 'timer-danger' : 'text-indigo-400'}`}>
-            <Clock className="w-3.5 h-3.5 animate-pulse" /> {minutes}:{seconds}
+        <div className={`flex flex-col items-center justify-center border-2 border-[#111111] px-3 md:px-4 py-1 min-w-[110px] md:min-w-[130px] shadow-[3px_3px_0px_#111111] ${
+          isDanger ? 'timer-danger' : 'bg-white'
+        }`}>
+          <p className="text-[9px] uppercase tracking-widest font-black text-neutral-600">Thời Gian</p>
+          <p className="text-sm md:text-base font-black font-mono tracking-tight flex items-center gap-1.5 text-[#111111]">
+            <Clock className="w-4 h-4" /> {minutes}:{seconds}
           </p>
         </div>
 
@@ -176,18 +179,18 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
           {/* Quick toggle button on mobile header */}
           <button
             onClick={() => setIsMobileSheetOpen(!isMobileSheetOpen)}
-            className="md:hidden px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"
+            className="md:hidden px-2.5 py-1.5 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs font-black flex items-center gap-1.5 active:translate-x-[1px] active:translate-y-[1px]"
           >
             <Edit3 className="w-3.5 h-3.5" />
             <span>{totalAnswered}/{totalQuestions}</span>
           </button>
 
-          <div className="text-right hidden sm:block">
-            <p className="text-xs font-bold text-slate-200">{user.name}</p>
-            <p className="text-[10px] text-indigo-400 uppercase font-semibold">Lớp: {user.group}</p>
+          <div className="text-right hidden sm:block bg-[#FDF6E9] border-2 border-[#111111] px-3 py-1 shadow-[2px_2px_0px_#111111]">
+            <p className="text-xs font-black text-[#111111] leading-tight truncate max-w-[140px]">{user.name}</p>
+            <p className="text-[10px] text-[#4D6BFE] uppercase font-black">Lớp: {user.group}</p>
           </div>
-          <div className="bg-indigo-600 p-2 rounded-xl shadow-md hidden sm:block">
-            <User className="w-4 h-4 text-white" />
+          <div className="bg-[#4D6BFE] text-white p-2 border-2 border-[#111111] shadow-[2px_2px_0px_#111111] hidden sm:block">
+            <User className="w-4 h-4" />
           </div>
         </div>
       </header>
@@ -196,11 +199,11 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
       <div className="flex-1 flex overflow-hidden relative">
         {/* PDF Viewer Section */}
         <div
-          className={`w-full relative z-10 bg-[#0b1121] flex flex-col p-1 md:p-2 pdf-container border-b md:border-b-0 md:border-r border-slate-800 shrink-0 transition-all duration-300 ${
+          className={`w-full relative z-10 bg-[#FDF6E9] flex flex-col p-1.5 md:p-3 pdf-container border-b-2 md:border-b-0 md:border-r-2 border-[#111111] shrink-0 transition-all duration-300 ${
             isFocusMode ? 'h-full md:w-full' : 'h-full md:w-3/5 lg:w-2/3'
           }`}
         >
-          <div className="flex-1 w-full h-full relative overflow-hidden rounded-xl bg-slate-950 border border-slate-800/80 shadow-2xl">
+          <div className="flex-1 w-full h-full relative overflow-hidden bg-white border-2 border-[#111111] shadow-[4px_4px_0px_#111111]">
             <PdfViewer fileUrl={cfg.file_link} exam={exam} title={exam.title} />
           </div>
         </div>
@@ -217,7 +220,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
         {/* Floating Draggable Button for Mobile */}
         {!isMobileSheetOpen && (
           <div
-            className="md:hidden fixed z-40 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white px-4 py-2.5 rounded-full shadow-[0_6px_25px_rgba(79,70,229,0.6)] font-bold flex items-center gap-2 cursor-move select-none border border-indigo-400/40"
+            className="md:hidden fixed z-40 bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] px-4 py-2.5 border-3 border-[#111111] shadow-[4px_4px_0px_#111111] font-black flex items-center gap-2 cursor-move select-none"
             style={{ left: `${btnPos.x}px`, top: `${btnPos.y}px`, touchAction: 'none' }}
             onPointerDown={onBtnDown}
             onPointerMove={onBtnMove}
@@ -225,79 +228,111 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
             onPointerCancel={onBtnUp}
           >
             <Edit3 className="w-4 h-4" />
-            <span className="text-xs">Phiếu Bài</span>
-            <span className="bg-indigo-900/80 px-2 py-0.5 rounded-full text-[10px] text-indigo-200 border border-indigo-400/30">
+            <span className="text-xs uppercase">Phiếu Bài</span>
+            <span className="bg-[#111111] text-white px-2 py-0.5 text-[10px] font-black">
               {totalAnswered}/{totalQuestions}
             </span>
           </div>
         )}
 
-        {/* Answer Sheet Panel */}
+        {/* Answer Sheet Panel (Bảng câu hỏi bên phải) */}
         <aside
-          className={`sidebar-panel w-full md:w-2/5 lg:w-1/3 bg-slate-900 flex flex-col transition-all duration-300 ${
+          className={`sidebar-panel w-full md:w-2/5 lg:w-1/3 bg-[#FDF6E9] flex flex-col transition-all duration-300 ${
             isMobileSheetOpen ? 'sheet-open' : ''
           } ${isFocusMode ? 'hidden' : 'flex'}`}
         >
           {/* Mobile Sheet Drag Handle */}
           <div 
             onClick={() => setIsMobileSheetOpen(false)} 
-            className="md:hidden pt-2.5 pb-1 flex justify-center cursor-pointer bg-slate-900/90 rounded-t-3xl"
+            className="md:hidden pt-2 pb-1 flex justify-center cursor-pointer bg-white border-b-2 border-[#111111]"
           >
-            <div className="w-12 h-1.5 bg-slate-600/80 rounded-full"></div>
+            <div className="w-16 h-2 bg-[#111111]"></div>
           </div>
 
-          <div className="p-3 md:p-4 border-b border-slate-800 flex items-center justify-between shrink-0 bg-slate-900/80">
+          <div className="p-3 md:p-4 border-b-2 border-[#111111] flex items-center justify-between shrink-0 bg-white shadow-[0_2px_0px_#111111]">
             <div className="flex items-center gap-2">
-              <Edit3 className="w-4 h-4 text-indigo-400" />
-              <h3 className="font-bold text-sm uppercase tracking-wider text-slate-200">Phiếu Đáp Án</h3>
-              <span className="text-[11px] font-bold px-2 py-0.5 bg-indigo-950 text-indigo-300 border border-indigo-800/80 rounded-lg">
-                Đã làm: {totalAnswered}/{totalQuestions}
+              <div className="p-1.5 bg-[#4D6BFE] text-white border border-[#111111] shadow-[1px_1px_0px_#111111]">
+                <Edit3 className="w-4 h-4" />
+              </div>
+              <h3 className="font-black text-sm uppercase tracking-wider text-[#111111]">Phiếu Đáp Án</h3>
+              <span className="text-[11px] font-black px-2.5 py-1 bg-[#FFC93C] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                {totalAnswered}/{totalQuestions}
               </span>
             </div>
             <button
               onClick={() => setIsMobileSheetOpen(false)}
-              className="md:hidden p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-lg"
+              className="md:hidden p-1.5 text-[#111111] hover:bg-[#E63946] hover:text-white bg-[#FDF6E9] border-2 border-[#111111] shadow-[2px_2px_0px_#111111]"
               title="Đóng phiếu bài làm"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 custom-scroll space-y-6 pb-24 md:pb-6">
+          {/* Question List: Large numbers, bold font, square boxes without rounded corners */}
+          <div className="flex-1 overflow-y-auto p-3 sm:p-4 custom-scroll space-y-6 pb-24 md:pb-6">
             {/* Part I: Multiple Choice */}
             {p1Questions.length > 0 && (
               <div>
-                <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3 border-b border-slate-800 pb-2">
-                  Phần I: Trắc Nghiệm ({p1Questions.length} câu)
-                </h4>
+                <div className="flex items-center justify-between bg-[#FFFFFF] border-2 border-[#111111] px-3 py-2 mb-3 shadow-[3px_3px_0px_#111111]">
+                  <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider">
+                    Phần I: Trắc Nghiệm ({p1Questions.length} câu)
+                  </h4>
+                  <span className="text-[10px] font-black text-[#4D6BFE] bg-[#FDF6E9] px-2 py-0.5 border border-[#111111]">
+                    Chọn 1 đáp án
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-4 xl:grid-cols-5 gap-2">
                   {p1Questions.map((qNum) => {
                     const isFlagged = flaggedQuestions[`p1_${qNum}`];
+                    const selected = ansPart1[qNum];
                     return (
-                      <div key={qNum} className="relative flex flex-col items-center p-2 bg-slate-800/50 rounded-xl border border-slate-700/50">
+                      <div 
+                        key={qNum} 
+                        className={`relative flex flex-col items-center p-2 border-2 border-[#111111] transition-all ${
+                          selected 
+                            ? 'bg-[#FFFFFF] shadow-[3px_3px_0px_#111111]' 
+                            : 'bg-white shadow-[2px_2px_0px_#111111]'
+                        } ${isFlagged ? 'ring-2 ring-[#FFC93C]' : ''}`}
+                      >
+                        {/* Bookmark/Flag Button */}
                         <button
                           type="button"
                           onClick={() => setFlaggedQuestions({ ...flaggedQuestions, [`p1_${qNum}`]: !isFlagged })}
-                          className={`absolute top-1 right-1 ${isFlagged ? 'text-amber-400' : 'text-slate-600 hover:text-slate-400'}`}
+                          className={`absolute top-1 right-1 p-0.5 transition-colors ${
+                            isFlagged 
+                              ? 'bg-[#FFC93C] text-[#111111] border border-[#111111]' 
+                              : 'text-neutral-400 hover:text-[#111111]'
+                          }`}
+                          title={isFlagged ? "Bỏ đánh dấu câu này" : "Đánh dấu xem lại câu này"}
                         >
-                          <Flag className="w-2.5 h-2.5" />
+                          <Flag className="w-2.5 h-2.5 fill-current" />
                         </button>
-                        <span className="text-[10px] font-bold text-slate-400 mb-1.5">Câu {qNum}</span>
+
+                        {/* Large bold number */}
+                        <span className="text-sm font-black text-[#111111] mb-1.5">
+                          {qNum}
+                        </span>
+
+                        {/* 4 Options: Non-rounded squares */}
                         <div className="flex gap-1 w-full flex-wrap justify-center">
-                          {['A', 'B', 'C', 'D'].map((ans) => (
-                            <button
-                              key={ans}
-                              type="button"
-                              onClick={() => setAnsPart1({ ...ansPart1, [qNum]: ans })}
-                              className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold transition-all ${
-                                ansPart1[qNum] === ans
-                                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/40'
-                                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                              }`}
-                            >
-                              {ans}
-                            </button>
-                          ))}
+                          {['A', 'B', 'C', 'D'].map((ans) => {
+                            const isSelected = selected === ans;
+                            return (
+                              <button
+                                key={ans}
+                                type="button"
+                                onClick={() => setAnsPart1({ ...ansPart1, [qNum]: ans })}
+                                className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center font-black text-xs border-2 border-[#111111] transition-all ${
+                                  isSelected
+                                    ? 'bg-[#4D6BFE] text-white shadow-[1px_1px_0px_#111111] translate-x-[1px] translate-y-[1px]'
+                                    : 'bg-white text-[#111111] shadow-[2px_2px_0px_#111111] hover:bg-[#FDF6E9] hover:translate-x-[-1px] hover:translate-y-[-1px]'
+                                }`}
+                              >
+                                {ans}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -309,50 +344,74 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
             {/* Part II: True / False */}
             {p2Questions.length > 0 && (
               <div>
-                <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-3 border-b border-slate-800 pb-2">
-                  Phần II: Đúng / Sai ({p2Questions.length} câu)
-                </h4>
+                <div className="flex items-center justify-between bg-[#FFFFFF] border-2 border-[#111111] px-3 py-2 mb-3 shadow-[3px_3px_0px_#111111]">
+                  <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider">
+                    Phần II: Đúng / Sai ({p2Questions.length} câu)
+                  </h4>
+                  <span className="text-[10px] font-black text-[#0F9D58] bg-[#FDF6E9] px-2 py-0.5 border border-[#111111]">
+                    Đúng (#0F9D58) / Sai (#E63946)
+                  </span>
+                </div>
+
                 <div className="space-y-3">
                   {p2Questions.map((qNum) => {
                     const isFlagged = flaggedQuestions[`p2_${qNum}`];
                     return (
-                      <div key={qNum} className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/50 relative">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-xs font-bold text-slate-300">Câu {qNum}</span>
+                      <div 
+                        key={qNum} 
+                        className={`p-3 bg-white border-2 border-[#111111] shadow-[3px_3px_0px_#111111] relative ${
+                          isFlagged ? 'ring-2 ring-[#FFC93C]' : ''
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-2.5 pb-1.5 border-b border-neutral-200">
+                          <span className="text-sm font-black text-[#111111]">
+                            Câu {qNum}
+                          </span>
                           <button
                             type="button"
                             onClick={() => setFlaggedQuestions({ ...flaggedQuestions, [`p2_${qNum}`]: !isFlagged })}
-                            className={`${isFlagged ? 'text-amber-400' : 'text-slate-600'}`}
+                            className={`p-1 text-xs font-bold flex items-center gap-1 border border-[#111111] shadow-[1px_1px_0px_#111111] ${
+                              isFlagged ? 'bg-[#FFC93C] text-[#111111]' : 'bg-[#FDF6E9] text-neutral-600'
+                            }`}
                           >
-                            <Flag className="w-3 h-3" />
+                            <Flag className="w-3 h-3 fill-current" />
+                            <span className="text-[10px]">Đánh dấu</span>
                           </button>
                         </div>
+
                         <div className="grid grid-cols-2 gap-2">
-                          {(['a', 'b', 'c', 'd'] as const).map((sub) => (
-                            <div key={sub} className="flex items-center justify-between bg-slate-900/60 px-2.5 py-1.5 rounded-lg border border-slate-700/40">
-                              <span className="text-[11px] font-bold uppercase text-slate-400">{sub}.</span>
-                              <div className="flex gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setAnsPart2({ ...ansPart2, [qNum]: { ...ansPart2[qNum], [sub]: 'Đ' } })}
-                                  className={`px-2.5 py-1 rounded text-[10px] font-bold ${
-                                    ansPart2[qNum]?.[sub] === 'Đ' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
-                                  }`}
-                                >
-                                  Đ
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setAnsPart2({ ...ansPart2, [qNum]: { ...ansPart2[qNum], [sub]: 'S' } })}
-                                  className={`px-2.5 py-1 rounded text-[10px] font-bold ${
-                                    ansPart2[qNum]?.[sub] === 'S' ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-400'
-                                  }`}
-                                >
-                                  S
-                                </button>
+                          {(['a', 'b', 'c', 'd'] as const).map((sub) => {
+                            const currentVal = ansPart2[qNum]?.[sub];
+                            return (
+                              <div key={sub} className="flex items-center justify-between bg-[#FDF6E9] px-2.5 py-1.5 border-2 border-[#111111]">
+                                <span className="text-xs font-black uppercase text-[#111111]">{sub}.</span>
+                                <div className="flex gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setAnsPart2({ ...ansPart2, [qNum]: { ...ansPart2[qNum], [sub]: 'Đ' } })}
+                                    className={`w-7 h-6 sm:w-8 sm:h-7 flex items-center justify-center font-black text-xs border-2 border-[#111111] transition-all ${
+                                      currentVal === 'Đ' 
+                                        ? 'bg-[#0F9D58] text-white shadow-[1px_1px_0px_#111111] translate-x-[1px] translate-y-[1px]' 
+                                        : 'bg-white text-[#111111] shadow-[2px_2px_0px_#111111] hover:bg-neutral-100'
+                                    }`}
+                                  >
+                                    Đ
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAnsPart2({ ...ansPart2, [qNum]: { ...ansPart2[qNum], [sub]: 'S' } })}
+                                    className={`w-7 h-6 sm:w-8 sm:h-7 flex items-center justify-center font-black text-xs border-2 border-[#111111] transition-all ${
+                                      currentVal === 'S' 
+                                        ? 'bg-[#E63946] text-white shadow-[1px_1px_0px_#111111] translate-x-[1px] translate-y-[1px]' 
+                                        : 'bg-white text-[#111111] shadow-[2px_2px_0px_#111111] hover:bg-neutral-100'
+                                    }`}
+                                  >
+                                    S
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     );
@@ -364,27 +423,43 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
             {/* Part III: Short Answer */}
             {p3Questions.length > 0 && (
               <div>
-                <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-3 border-b border-slate-800 pb-2">
-                  Phần III: Trả Lời Ngắn ({p3Questions.length} câu)
-                </h4>
-                <div className="space-y-2">
+                <div className="flex items-center justify-between bg-[#FFFFFF] border-2 border-[#111111] px-3 py-2 mb-3 shadow-[3px_3px_0px_#111111]">
+                  <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider">
+                    Phần III: Trả Lời Ngắn ({p3Questions.length} câu)
+                  </h4>
+                  <span className="text-[10px] font-black text-[#111111] bg-[#FFC93C] px-2 py-0.5 border border-[#111111]">
+                    Điền số
+                  </span>
+                </div>
+
+                <div className="space-y-2.5">
                   {p3Questions.map((qNum) => {
                     const isFlagged = flaggedQuestions[`p3_${qNum}`];
                     return (
-                      <div key={qNum} className="flex items-center gap-2 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50 relative">
+                      <div 
+                        key={qNum} 
+                        className={`flex items-center gap-2 bg-white p-2.5 border-2 border-[#111111] shadow-[3px_3px_0px_#111111] relative ${
+                          isFlagged ? 'ring-2 ring-[#FFC93C]' : ''
+                        }`}
+                      >
                         <button
                           type="button"
                           onClick={() => setFlaggedQuestions({ ...flaggedQuestions, [`p3_${qNum}`]: !isFlagged })}
-                          className={`absolute top-2 right-2 ${isFlagged ? 'text-amber-400' : 'text-slate-600'}`}
+                          className={`p-1 transition-colors ${
+                            isFlagged ? 'bg-[#FFC93C] text-[#111111] border border-[#111111]' : 'text-neutral-400 hover:text-[#111111]'
+                          }`}
+                          title="Đánh dấu xem lại"
                         >
-                          <Flag className="w-3 h-3" />
+                          <Flag className="w-3.5 h-3.5 fill-current" />
                         </button>
-                        <span className="text-xs font-bold text-slate-400 w-12 text-center">Câu {qNum}</span>
+                        <span className="text-xs font-black text-[#111111] w-14 text-center shrink-0">
+                          Câu {qNum}
+                        </span>
                         <input
                           type="text"
                           value={ansPart3[qNum] || ''}
                           onChange={(e) => setAnsPart3({ ...ansPart3, [qNum]: e.target.value })}
-                          className="flex-1 bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg text-xs font-bold text-white outline-none focus:border-emerald-500"
+                          className="flex-1 bg-[#FDF6E9] border-2 border-[#111111] px-3 py-2 text-xs font-black text-[#111111] outline-none focus:bg-white shadow-[2px_2px_0px_#111111]"
                           placeholder="Nhập đáp số..."
                         />
                       </div>
@@ -395,11 +470,11 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
             )}
           </div>
 
-          {/* Submit Button */}
-          <div className="p-4 bg-slate-900/90 border-t border-slate-800 shrink-0">
+          {/* Submit Button: #FFC93C (vàng mù tạt) với viền đen 2px và đổ bóng khối */}
+          <div className="p-4 bg-white border-t-2 border-[#111111] shrink-0 shadow-[0_-2px_0px_#111111]">
             <button
               onClick={() => handleSubmit(false)}
-              className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2"
+              className="w-full bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] py-3.5 border-3 border-[#111111] shadow-[4px_4px_0px_#111111] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_#111111] font-black text-sm uppercase tracking-wider text-[#111111] flex items-center justify-center gap-2 transition-all"
             >
               <Send className="w-4 h-4" /> Nộp Bài Làm
             </button>
@@ -409,3 +484,4 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     </div>
   );
 };
+

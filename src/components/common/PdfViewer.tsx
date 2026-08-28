@@ -102,15 +102,15 @@ const PdfSinglePage: React.FC<PdfPageProps> = ({ pdfDoc, pageNum, scale }) => {
   return (
     <div 
       id={`pdf-page-${pageNum}`}
-      className="mb-4 sm:mb-6 flex flex-col items-center bg-white rounded-lg shadow-xl overflow-hidden border border-slate-700/50 transition-all"
+      className="mb-4 sm:mb-6 flex flex-col items-center bg-white border-2 border-[#111111] shadow-[4px_4px_0px_#111111] overflow-hidden transition-all"
       style={{ width: pageDimensions.width ? `${pageDimensions.width}px` : '100%', maxWidth: '100%' }}
     >
       {/* Top Page Header Tag */}
-      <div className="w-full bg-slate-100 border-b border-slate-300/80 px-3 py-1.5 flex items-center justify-between text-slate-600 select-none">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-900 flex items-center gap-1">
-          <FileText className="w-3 h-3 text-indigo-600" /> Trang {pageNum}
+      <div className="w-full bg-[#FDF6E9] border-b-2 border-[#111111] px-3 py-1.5 flex items-center justify-between text-[#111111] select-none">
+        <span className="text-[11px] font-black uppercase tracking-wider text-[#111111] flex items-center gap-1.5">
+          <FileText className="w-3.5 h-3.5 text-[#4D6BFE]" /> Trang {pageNum}
         </span>
-        <span className="text-[10px] font-mono font-medium text-slate-500">
+        <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-white border border-[#111111]">
           {pageNum} / {pdfDoc.numPages}
         </span>
       </div>
@@ -119,10 +119,10 @@ const PdfSinglePage: React.FC<PdfPageProps> = ({ pdfDoc, pageNum, scale }) => {
       <div className="relative w-full flex justify-center bg-white min-h-[300px]">
         {!isRendered && (
           <div 
-            className="absolute inset-0 flex items-center justify-center bg-slate-50"
+            className="absolute inset-0 flex items-center justify-center bg-[#FDF6E9]"
             style={{ minHeight: `${pageDimensions.height || 400}px` }}
           >
-            <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+            <div className="w-7 h-7 border-3 border-[#111111] border-t-[#4D6BFE] animate-spin"></div>
           </div>
         )}
         <canvas ref={canvasRef} className="block max-w-full" />
@@ -313,32 +313,32 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-slate-950 overflow-hidden" ref={containerRef}>
+    <div className="w-full h-full flex flex-col bg-[#FDF6E9] overflow-hidden" ref={containerRef}>
       {/* Sleek Compact Toolbar */}
-      <div className="bg-slate-900 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2 shrink-0 z-20 shadow-md">
+      <div className="bg-white border-b-2 border-[#111111] px-3 py-2 flex items-center justify-between gap-2 shrink-0 z-20 shadow-[0_2px_0px_#111111]">
         {/* Left: Document Info & Page Count */}
-        <div className="flex items-center gap-1.5 min-w-0">
-          <div className="p-1 bg-indigo-600/20 text-indigo-400 rounded-md shrink-0">
-            <FileText className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-1.5 bg-[#FFC93C] text-[#111111] border border-[#111111] shadow-[1px_1px_0px_#111111] shrink-0 font-black">
+            <FileText className="w-4 h-4" />
           </div>
-          <span className="text-xs font-bold text-slate-200 truncate max-w-[130px] sm:max-w-[200px] md:max-w-xs">
+          <span className="text-xs font-black text-[#111111] truncate max-w-[130px] sm:max-w-[200px] md:max-w-xs">
             {title || exam?.title || 'Đề Thi PDF'}
           </span>
           {renderMode === 'canvas' && numPages > 0 && (
-            <span className="text-[10px] font-bold bg-slate-800 text-indigo-300 px-2 py-0.5 rounded-full border border-slate-700 shrink-0">
+            <span className="text-[10px] font-black bg-[#4D6BFE] text-white px-2 py-0.5 border border-[#111111] shadow-[1px_1px_0px_#111111] shrink-0">
               {numPages} trang
             </span>
           )}
         </div>
 
         {/* Right: Controls (Zoom, Fit Width, Open Tab) */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {renderMode === 'canvas' && (
-            <div className="flex items-center bg-slate-800/90 rounded-lg p-0.5 border border-slate-700/80">
+            <div className="flex items-center bg-[#FDF6E9] p-0.5 border-2 border-[#111111] shadow-[1px_1px_0px_#111111]">
               <button
                 type="button"
                 onClick={handleZoomOut}
-                className="p-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                className="p-1 text-[#111111] hover:bg-white active:bg-neutral-200 transition-colors"
                 title="Thu nhỏ (-)"
               >
                 <ZoomOut className="w-3.5 h-3.5" />
@@ -347,8 +347,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
               <button
                 type="button"
                 onClick={handleFitWidth}
-                className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition-colors ${
-                  fitMode === 'fit-width' ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white'
+                className={`px-1.5 py-0.5 text-[10px] font-black border-x border-[#111111] transition-colors ${
+                  fitMode === 'fit-width' ? 'bg-[#4D6BFE] text-white' : 'text-[#111111] hover:bg-white'
                 }`}
                 title="Tự động căn vừa chiều rộng"
               >
@@ -358,7 +358,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
               <button
                 type="button"
                 onClick={handleZoomIn}
-                className="p-1 text-slate-300 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                className="p-1 text-[#111111] hover:bg-white active:bg-neutral-200 transition-colors"
                 title="Phóng to (+)"
               >
                 <ZoomIn className="w-3.5 h-3.5" />
@@ -370,7 +370,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
             <button
               type="button"
               onClick={() => setIframeKey((prev) => prev + 1)}
-              className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors border border-slate-700"
+              className="px-2 py-1 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] text-xs font-bold flex items-center gap-1 shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px]"
               title="Tải lại khung xem đề"
             >
               <RefreshCw className="w-3 h-3" /> <span className="hidden sm:inline">Tải lại</span>
@@ -381,10 +381,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
             <button
               type="button"
               onClick={handleOpenExternal}
-              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-sm shadow-indigo-600/30 transition-all"
+              className="px-2.5 py-1 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] text-xs font-black flex items-center gap-1 shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] transition-all"
               title="Mở đề thi trong tab mới"
             >
-              <ExternalLink className="w-3 h-3" />
+              <ExternalLink className="w-3.5 h-3.5" />
               <span className="hidden xs:inline">Mở Tab Mới</span>
             </button>
           )}
@@ -392,12 +392,12 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
       </div>
 
       {/* Main Document Viewer Container */}
-      <div className="flex-1 w-full h-full relative overflow-y-auto overflow-x-auto p-2 sm:p-4 flex flex-col items-center bg-slate-950">
+      <div className="flex-1 w-full h-full relative overflow-y-auto overflow-x-auto p-2 sm:p-4 flex flex-col items-center bg-[#FDF6E9]">
         {loading && (
-          <div className="my-auto flex flex-col items-center justify-center p-8 text-center">
-            <div className="w-10 h-10 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-            <p className="text-sm font-bold text-slate-200">Đang tải và hiển thị đề thi...</p>
-            <p className="text-xs text-slate-500 mt-1">Độ phân giải HD cho điện thoại và máy tính</p>
+          <div className="my-auto flex flex-col items-center justify-center p-8 text-center bg-white border-2 border-[#111111] shadow-[4px_4px_0px_#111111]">
+            <div className="w-10 h-10 border-4 border-[#111111] border-t-[#4D6BFE] animate-spin mb-3"></div>
+            <p className="text-sm font-black text-[#111111]">Đang tải và hiển thị đề thi...</p>
+            <p className="text-xs text-neutral-600 font-bold mt-1">Độ phân giải HD cho điện thoại và máy tính</p>
           </div>
         )}
 
@@ -417,7 +417,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
 
         {/* 2. Google Drive /preview Frame */}
         {!loading && renderMode === 'drive_iframe' && pdfInfo.previewUrl && (
-          <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden shadow-2xl bg-white">
+          <div className="w-full h-full flex flex-col relative border-2 border-[#111111] shadow-[4px_4px_0px_#111111] bg-white overflow-hidden">
             <iframe
               key={iframeKey}
               src={pdfInfo.previewUrl}
@@ -430,7 +430,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
 
         {/* 3. Google Docs Viewer Fallback */}
         {!loading && renderMode === 'docs_iframe' && fileUrl && (
-          <div className="w-full h-full flex flex-col relative rounded-xl overflow-hidden shadow-2xl bg-white">
+          <div className="w-full h-full flex flex-col relative border-2 border-[#111111] shadow-[4px_4px_0px_#111111] bg-white overflow-hidden">
             <iframe
               key={iframeKey}
               src={`https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`}
@@ -443,20 +443,20 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
 
         {/* 4. Elegant Professional Native Exam Template (Sample) */}
         {!loading && renderMode === 'sample' && (
-          <div className="max-w-3xl w-full bg-white text-slate-900 rounded-xl shadow-2xl p-5 sm:p-8 md:p-10 font-serif leading-relaxed border border-slate-200 my-auto">
+          <div className="max-w-3xl w-full bg-white text-[#111111] border-3 border-[#111111] shadow-[6px_6px_0px_#111111] p-5 sm:p-8 md:p-10 leading-relaxed my-auto">
             {/* Header */}
-            <div className="border-b-2 border-slate-900 pb-4 mb-6 text-center">
-              <div className="flex justify-between items-start text-[11px] sm:text-xs font-sans font-bold uppercase tracking-wider text-slate-600 mb-2">
+            <div className="border-b-3 border-[#111111] pb-4 mb-6 text-center">
+              <div className="flex justify-between items-start text-[11px] sm:text-xs font-black uppercase tracking-wider text-[#111111] mb-2">
                 <span>BỘ GIÁO DỤC & ĐÀO TẠO</span>
                 <span>KỲ THI ĐÁNH GIÁ NĂNG LỰC 2026</span>
               </div>
-              <h2 className="text-lg sm:text-2xl font-bold uppercase text-slate-900 font-sans tracking-tight">
+              <h2 className="text-lg sm:text-2xl font-black uppercase text-[#111111] tracking-tight">
                 {exam?.title || title || 'ĐỀ KHẢO SÁT CHẤT LƯỢNG HỌC TẬP'}
               </h2>
-              <p className="text-xs font-sans font-medium text-slate-600 mt-1">
+              <p className="text-xs font-bold text-neutral-700 mt-1">
                 Thời gian làm bài: <strong>{exam?.duration || 50} phút</strong> (Không kể thời gian phát đề)
               </p>
-              <div className="mt-3 text-[11px] font-sans text-indigo-900 bg-indigo-50 border border-indigo-200/80 py-1 px-3 rounded-lg inline-block">
+              <div className="mt-3 text-[11px] font-black text-[#111111] bg-[#FFC93C] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] py-1 px-3 inline-block">
                 📖 <em>Thí sinh làm bài trực tiếp và chọn câu trả lời tại Phiếu Bài Làm bên phải</em>
               </div>
             </div>
@@ -465,14 +465,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
             <div className="space-y-6 text-sm">
               {/* Part 1 */}
               <div>
-                <div className="font-sans font-bold text-sm sm:text-base text-indigo-900 bg-slate-100 px-3 py-1.5 rounded-lg mb-3 border border-slate-200">
+                <div className="font-black text-sm sm:text-base text-[#111111] bg-[#FDF6E9] px-3 py-2 mb-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
                   PHẦN I. Câu trắc nghiệm nhiều phương án lựa chọn (Thí sinh chọn 1 đáp án A, B, C hoặc D)
                 </div>
-                <div className="space-y-3 font-sans pl-1 sm:pl-2">
+                <div className="space-y-3 pl-1 sm:pl-2">
                   {Array.from({ length: exam?.questions?.num_p1 || 12 }, (_, i) => i + 1).map((qNum) => (
-                    <div key={qNum} className="pb-3 border-b border-slate-100">
-                      <p className="font-bold text-slate-900 leading-snug">
-                        Câu {qNum}: <span className="font-normal text-slate-800">
+                    <div key={qNum} className="pb-3 border-b-2 border-neutral-200">
+                      <p className="font-extrabold text-[#111111] leading-snug">
+                        Câu {qNum}: <span className="font-semibold text-neutral-800">
                           {qNum === 1 && 'Hàm số y = f(x) liên tục trên R và có đạo hàm f\'(x) = (x - 1)(x + 2)^2. Số điểm cực trị của hàm số là:'}
                           {qNum === 2 && 'Nghiệm của phương trình logarit log_3(2x - 1) = 2 là:'}
                           {qNum === 3 && 'Cho hình chóp S.ABCD có đáy là hình vuông cạnh a, SA vuông góc với mặt phẳng đáy, SA = a√3. Góc giữa SC và mặt đáy bằng:'}
@@ -480,11 +480,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
                           {qNum > 4 && `Nội dung câu hỏi số ${qNum} phục vụ kiểm tra kiến thức tổng hợp chương trình.`}
                         </span>
                       </p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-xs font-sans">
-                        <span className="p-1.5 rounded bg-slate-50 border border-slate-200 font-medium"><strong className="text-indigo-900">A.</strong> Phương án A</span>
-                        <span className="p-1.5 rounded bg-slate-50 border border-slate-200 font-medium"><strong className="text-indigo-900">B.</strong> Phương án B</span>
-                        <span className="p-1.5 rounded bg-slate-50 border border-slate-200 font-medium"><strong className="text-indigo-900">C.</strong> Phương án C</span>
-                        <span className="p-1.5 rounded bg-slate-50 border border-slate-200 font-medium"><strong className="text-indigo-900">D.</strong> Phương án D</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-xs font-bold">
+                        <span className="p-1.5 bg-[#FDF6E9] border-2 border-[#111111]"><strong className="text-[#4D6BFE]">A.</strong> Phương án A</span>
+                        <span className="p-1.5 bg-[#FDF6E9] border-2 border-[#111111]"><strong className="text-[#4D6BFE]">B.</strong> Phương án B</span>
+                        <span className="p-1.5 bg-[#FDF6E9] border-2 border-[#111111]"><strong className="text-[#4D6BFE]">C.</strong> Phương án C</span>
+                        <span className="p-1.5 bg-[#FDF6E9] border-2 border-[#111111]"><strong className="text-[#4D6BFE]">D.</strong> Phương án D</span>
                       </div>
                     </div>
                   ))}
@@ -494,20 +494,20 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
               {/* Part 2 */}
               {(exam?.questions?.num_p2 || 4) > 0 && (
                 <div>
-                  <div className="font-sans font-bold text-sm sm:text-base text-indigo-900 bg-slate-100 px-3 py-1.5 rounded-lg mb-3 border border-slate-200">
+                  <div className="font-black text-sm sm:text-base text-[#111111] bg-[#FDF6E9] px-3 py-2 mb-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
                     PHẦN II. Câu trắc nghiệm đúng sai (Thí sinh trả lời Đúng/Sai cho từng ý a, b, c, d)
                   </div>
-                  <div className="space-y-3 font-sans pl-1 sm:pl-2">
+                  <div className="space-y-3 pl-1 sm:pl-2">
                     {Array.from({ length: exam?.questions?.num_p2 || 4 }, (_, i) => i + 1).map((qNum) => (
-                      <div key={qNum} className="pb-3 border-b border-slate-100">
-                        <p className="font-bold text-slate-900 leading-snug">
-                          Câu {qNum}: <span className="font-normal text-slate-800">Xét tính đúng / sai của các mệnh đề sau:</span>
+                      <div key={qNum} className="pb-3 border-b-2 border-neutral-200">
+                        <p className="font-extrabold text-[#111111] leading-snug">
+                          Câu {qNum}: <span className="font-semibold text-neutral-800">Xét tính đúng / sai của các mệnh đề sau:</span>
                         </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-2 text-xs">
-                          <span className="p-1.5 bg-slate-50 border border-slate-200 rounded font-medium">a) Mệnh đề khẳng định ý a</span>
-                          <span className="p-1.5 bg-slate-50 border border-slate-200 rounded font-medium">b) Mệnh đề khẳng định ý b</span>
-                          <span className="p-1.5 bg-slate-50 border border-slate-200 rounded font-medium">c) Mệnh đề khẳng định ý c</span>
-                          <span className="p-1.5 bg-slate-50 border border-slate-200 rounded font-medium">d) Mệnh đề khẳng định ý d</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-2 text-xs font-bold">
+                          <span className="p-1.5 bg-[#FDF6E9] border-2 border-[#111111]">a) Mệnh đề khẳng định ý a</span>
+                          <span className="p-1.5 bg-[#FDF6E9] border-2 border-[#111111]">b) Mệnh đề khẳng định ý b</span>
+                          <span className="p-1.5 bg-[#FDF6E9] border-2 border-[#111111]">c) Mệnh đề khẳng định ý c</span>
+                          <span className="p-1.5 bg-[#FDF6E9] border-2 border-[#111111]">d) Mệnh đề khẳng định ý d</span>
                         </div>
                       </div>
                     ))}
@@ -518,14 +518,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
               {/* Part 3 */}
               {(exam?.questions?.num_p3 || 6) > 0 && (
                 <div>
-                  <div className="font-sans font-bold text-sm sm:text-base text-indigo-900 bg-slate-100 px-3 py-1.5 rounded-lg mb-3 border border-slate-200">
+                  <div className="font-black text-sm sm:text-base text-[#111111] bg-[#FDF6E9] px-3 py-2 mb-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
                     PHẦN III. Câu trắc nghiệm trả lời ngắn (Thí sinh điền kết quả dạng số)
                   </div>
-                  <div className="space-y-3 font-sans pl-1 sm:pl-2">
+                  <div className="space-y-3 pl-1 sm:pl-2">
                     {Array.from({ length: exam?.questions?.num_p3 || 6 }, (_, i) => i + 1).map((qNum) => (
-                      <div key={qNum} className="pb-3 border-b border-slate-100">
-                        <p className="font-bold text-slate-900 leading-snug">
-                          Câu {qNum}: <span className="font-normal text-slate-800">Tính toán và điền đáp số chính xác cho câu {qNum}.</span>
+                      <div key={qNum} className="pb-3 border-b-2 border-neutral-200">
+                        <p className="font-extrabold text-[#111111] leading-snug">
+                          Câu {qNum}: <span className="font-semibold text-neutral-800">Tính toán và điền đáp số chính xác cho câu {qNum}.</span>
                         </p>
                       </div>
                     ))}
@@ -535,7 +535,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ fileUrl, exam, title }) =>
             </div>
 
             {/* Footer */}
-            <div className="mt-8 pt-4 border-t border-slate-300 text-center font-sans text-xs text-slate-500 font-bold">
+            <div className="mt-8 pt-4 border-t-2 border-[#111111] text-center text-xs text-neutral-700 font-black">
               --- HẾT ---
             </div>
           </div>

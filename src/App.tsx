@@ -191,77 +191,77 @@ export default function App() {
 
         {/* 2. LOGGED IN AS TEACHER / ADMIN */}
         {currentUser && currentUser.role === 'teacher' && (
-          <div className="flex w-full min-h-[calc(100dvh-65px)] overflow-hidden">
+          <div className="flex w-full min-h-[calc(100dvh-65px)] overflow-hidden bg-[#FDF6E9] text-[#111111]">
             {/* Teacher Navigation Sidebar */}
-            <aside className="w-64 bg-slate-950/80 border-r border-slate-900 flex flex-col shrink-0 p-4 space-y-2 z-20">
-              <div className="p-3 mb-2 bg-gradient-to-r from-indigo-950 to-slate-900 border border-indigo-900/50 rounded-xl flex items-center gap-2.5">
-                <Component className="w-5 h-5 text-indigo-400" />
+            <aside className="w-64 bg-white border-r-3 border-[#111111] flex flex-col shrink-0 p-4 space-y-3 z-20 shadow-[4px_0px_0px_#111111]">
+              <div className="p-3 bg-[#FDF6E9] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] flex items-center gap-2.5">
+                <Component className="w-5 h-5 text-[#4D6BFE]" />
                 <div>
-                  <h2 className="font-extrabold text-xs text-white uppercase tracking-wider">
+                  <h2 className="font-black text-xs text-[#111111] uppercase tracking-wider">
                     Bảng Điều Hành GV
                   </h2>
-                  <p className="text-[10px] text-cyan-400 font-semibold uppercase">Management Console</p>
+                  <p className="text-[10px] text-[#4D6BFE] font-black uppercase">Management Console</p>
                 </div>
               </div>
 
-              <nav className="flex-1 space-y-1.5">
+              <nav className="flex-1 space-y-2">
                 <button
                   onClick={() => setTeacherSubView('dashboard')}
-                  className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-3 font-black text-xs uppercase tracking-wider transition-all border-2 border-[#111111] ${
                     teacherSubView === 'dashboard'
-                      ? 'bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 shadow-sm'
-                      : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                      ? 'bg-[#FFC93C] text-[#111111] shadow-[3px_3px_0px_#111111] translate-x-1'
+                      : 'bg-white text-neutral-700 hover:bg-[#FDF6E9] hover:text-[#111111]'
                   }`}
                 >
-                  <LayoutDashboard className="w-4 h-4" /> Trang Tổng Quan
+                  <LayoutDashboard className="w-4 h-4 text-[#111111]" /> Trang Tổng Quan
                 </button>
 
                 <button
                   onClick={() => setTeacherSubView('exams')}
-                  className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-3 font-black text-xs uppercase tracking-wider transition-all border-2 border-[#111111] ${
                     teacherSubView === 'exams'
-                      ? 'bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 shadow-sm'
-                      : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                      ? 'bg-[#FFC93C] text-[#111111] shadow-[3px_3px_0px_#111111] translate-x-1'
+                      : 'bg-white text-neutral-700 hover:bg-[#FDF6E9] hover:text-[#111111]'
                   }`}
                 >
-                  <FileSpreadsheet className="w-4 h-4" /> Kho Đề Thi & Phân Lớp
+                  <FileSpreadsheet className="w-4 h-4 text-[#111111]" /> Kho Đề Thi & Phân Lớp
                 </button>
 
                 <button
                   onClick={() => setTeacherSubView('students')}
-                  className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-3 font-black text-xs uppercase tracking-wider transition-all border-2 border-[#111111] ${
                     teacherSubView === 'students'
-                      ? 'bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 shadow-sm'
-                      : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                      ? 'bg-[#FFC93C] text-[#111111] shadow-[3px_3px_0px_#111111] translate-x-1'
+                      : 'bg-white text-neutral-700 hover:bg-[#FDF6E9] hover:text-[#111111]'
                   }`}
                 >
-                  <ShieldCheck className="w-4 h-4" /> Quản Lý Học Sinh & Lớp
+                  <ShieldCheck className="w-4 h-4 text-[#111111]" /> Học Sinh & Phân Lớp
                 </button>
 
                 <button
                   onClick={() => setTeacherSubView('history')}
-                  className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
+                  className={`w-full flex items-center gap-3 px-3.5 py-3 font-black text-xs uppercase tracking-wider transition-all border-2 border-[#111111] ${
                     teacherSubView === 'history'
-                      ? 'bg-indigo-600/20 border border-indigo-500/40 text-indigo-300 shadow-sm'
-                      : 'text-slate-400 hover:bg-slate-900 hover:text-white'
+                      ? 'bg-[#FFC93C] text-[#111111] shadow-[3px_3px_0px_#111111] translate-x-1'
+                      : 'bg-white text-neutral-700 hover:bg-[#FDF6E9] hover:text-[#111111]'
                   }`}
                 >
-                  <Activity className="w-4 h-4" /> Nhật Ký Nộp Bài & Điểm
+                  <Activity className="w-4 h-4 text-[#111111]" /> Nhật Ký Nộp & Điểm
                 </button>
               </nav>
 
-              <div className="pt-2 border-t border-slate-900">
+              <div className="pt-2 border-t-2 border-[#111111]">
                 <button
                   onClick={handleLogout}
-                  className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase text-rose-400 bg-rose-950/20 hover:bg-rose-950/40 border border-rose-900/30 transition-all"
+                  className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 font-black text-xs uppercase text-white bg-[#E63946] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-[1px_1px_0px_#111111] transition-all"
                 >
-                  <Power className="w-4 h-4" /> Đăng xuất Giáo Viên
+                  <Power className="w-4 h-4" /> Đăng Xuất GV
                 </button>
               </div>
             </aside>
 
             {/* Teacher Content View */}
-            <div className="flex-1 p-6 overflow-y-auto custom-scroll">
+            <div className="flex-1 p-6 md:p-8 overflow-y-auto custom-scroll">
               {teacherSubView === 'dashboard' && (
                 <DashboardView exams={exams} students={students} history={history} classes={classes} />
               )}

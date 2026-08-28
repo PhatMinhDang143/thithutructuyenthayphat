@@ -85,12 +85,12 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
   });
 
   return (
-    <div className="cyber-panel rounded-2xl border border-slate-800 overflow-hidden flex flex-col h-full space-y-6">
+    <div className="bg-white border-3 border-[#111111] shadow-[6px_6px_0px_#111111] overflow-hidden flex flex-col h-full space-y-6 text-[#111111]">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-6 border-b border-slate-800 gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-6 border-b-2 border-[#111111] gap-4">
         <div>
-          <h2 className="text-xl md:text-2xl font-extrabold text-white">Xác Thực & Phân Lớp Học Viên</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <h2 className="text-xl md:text-2xl font-black uppercase text-[#111111]">Xác Thực & Phân Lớp Học Viên</h2>
+          <p className="text-xs md:text-sm text-neutral-700 font-bold mt-0.5">
             Quản lý tài khoản học sinh và gán trực tiếp vào từng lớp học cụ thể.
           </p>
         </div>
@@ -98,14 +98,14 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
           <button
             onClick={handleAddRow}
-            className="px-4 py-2.5 bg-cyan-950 text-cyan-300 hover:bg-cyan-900 border border-cyan-800/60 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors"
+            className="px-4 py-3 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all"
           >
-            <UserPlus className="w-4 h-4" /> Thêm Ô Học Sinh
+            <UserPlus className="w-4 h-4 text-[#4D6BFE]" /> Thêm Ô Học Sinh
           </button>
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50"
+            className="px-5 py-3 bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {isSaving ? 'Đang lưu...' : 'Lưu Tất Cả Thay Đổi'}
@@ -114,19 +114,19 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
       </div>
 
       {/* Class Filter Bar */}
-      <div className="px-6 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-950/60 p-4 rounded-xl mx-6 border border-slate-800">
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-indigo-400" />
-          <span className="text-xs font-bold text-slate-300 uppercase">Lọc Danh Sách Theo Lớp:</span>
+      <div className="px-6 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#FDF6E9] p-4 mx-6 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Filter className="w-4 h-4 text-[#4D6BFE]" />
+          <span className="text-xs font-black text-[#111111] uppercase">Lọc Danh Sách Theo Lớp:</span>
           <div className="flex flex-wrap gap-1.5 ml-2">
             {classes.map((clsName) => (
               <button
                 key={clsName}
                 onClick={() => setSelectedClassFilter(clsName)}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                className={`px-3 py-1 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
                   selectedClassFilter === clsName
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    ? 'bg-[#4D6BFE] text-white shadow-[2px_2px_0px_#111111]'
+                    : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
                 }`}
               >
                 {clsName === 'Tất cả' ? 'Tất Cả Lớp' : `Lớp ${clsName}`}
@@ -135,70 +135,70 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
           </div>
         </div>
 
-        <div className="text-xs text-slate-400">
-          Hiển thị: <strong className="text-white">{filteredList.length}</strong> học sinh
+        <div className="text-xs font-black text-neutral-800">
+          Hiển thị: <strong className="text-[#4D6BFE]">{filteredList.length}</strong> học sinh
         </div>
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto flex-1 custom-scroll p-6">
-        <table className="w-full text-left border-collapse">
+      <div className="overflow-x-auto flex-1 custom-scroll px-6 pb-6">
+        <table className="w-full text-left border-collapse border-2 border-[#111111]">
           <thead>
-            <tr className="text-[11px] uppercase tracking-wider font-extrabold text-slate-400 bg-slate-950 border border-slate-800">
-              <th className="p-3.5 w-44">Tài Khoản (SBD)</th>
-              <th className="p-3.5 w-36">Mật Khẩu</th>
-              <th className="p-3.5">Họ Và Tên Học Sinh</th>
-              <th className="p-3.5 w-48">Phân Lớp Học Sinh</th>
+            <tr className="text-xs uppercase tracking-wider font-black text-[#111111] bg-[#FDF6E9] border-b-2 border-[#111111]">
+              <th className="p-3.5 w-44 border-r-2 border-[#111111]">Tài Khoản (SBD)</th>
+              <th className="p-3.5 w-36 border-r-2 border-[#111111]">Mật Khẩu</th>
+              <th className="p-3.5 border-r-2 border-[#111111]">Họ Và Tên Học Sinh</th>
+              <th className="p-3.5 w-48 border-r-2 border-[#111111]">Phân Lớp Học Sinh</th>
               <th className="p-3.5 w-16 text-center">Xóa</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60">
+          <tbody className="divide-y-2 divide-neutral-200">
             {filteredList.map((s, idx) => {
               // Find real index in total list
               const realIndex = studentList.findIndex((item) => item === s);
 
               return (
-                <tr key={realIndex >= 0 ? realIndex : idx} className="hover:bg-slate-900/40 transition-colors">
-                  <td className="p-2">
+                <tr key={realIndex >= 0 ? realIndex : idx} className="hover:bg-[#FDF6E9] transition-colors">
+                  <td className="p-2 border-r-2 border-neutral-200">
                     <input
                       type="text"
                       value={s.username}
                       onChange={(e) => handleUpdateRow(realIndex, 'username', e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 p-2.5 rounded-xl outline-none font-bold text-xs text-indigo-300"
+                      className="w-full bg-white border-2 border-[#111111] p-2 font-black text-xs text-[#111111] outline-none focus:bg-[#FDF6E9]"
                       placeholder="Mã định danh"
                     />
                   </td>
-                  <td className="p-2">
+                  <td className="p-2 border-r-2 border-neutral-200">
                     <input
                       type="text"
                       value={s.password}
                       onChange={(e) => handleUpdateRow(realIndex, 'password', e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 p-2.5 rounded-xl outline-none text-xs text-slate-300 font-mono"
+                      className="w-full bg-white border-2 border-[#111111] p-2 text-xs text-[#111111] font-mono font-bold outline-none focus:bg-[#FDF6E9]"
                       placeholder="Mật khẩu"
                     />
                   </td>
-                  <td className="p-2">
+                  <td className="p-2 border-r-2 border-neutral-200">
                     <input
                       type="text"
                       value={s.name}
                       onChange={(e) => handleUpdateRow(realIndex, 'name', e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 p-2.5 rounded-xl outline-none font-bold text-xs text-white"
+                      className="w-full bg-white border-2 border-[#111111] p-2 font-black text-xs text-[#111111] outline-none focus:bg-[#FDF6E9]"
                       placeholder="Họ tên đầy đủ"
                     />
                   </td>
-                  <td className="p-2">
+                  <td className="p-2 border-r-2 border-neutral-200">
                     <input
                       type="text"
                       value={s.group}
                       onChange={(e) => handleUpdateRow(realIndex, 'group', e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 p-2.5 rounded-xl outline-none font-extrabold text-xs text-cyan-300 uppercase"
+                      className="w-full bg-white border-2 border-[#111111] p-2 font-black text-xs text-[#4D6BFE] uppercase outline-none focus:bg-[#FDF6E9]"
                       placeholder="VD: 12A1"
                     />
                   </td>
                   <td className="p-2 text-center">
                     <button
                       onClick={() => handleRemoveRow(realIndex)}
-                      className="p-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400 rounded-lg transition-all"
+                      className="p-2 bg-white text-[#E63946] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] hover:bg-[#E63946] hover:text-white transition-all active:translate-x-[1px] active:translate-y-[1px]"
                       title="Xóa học sinh này"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -210,7 +210,7 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
 
             {filteredList.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-12 text-center text-slate-500 text-xs">
+                <td colSpan={5} className="p-12 text-center text-neutral-600 font-bold text-xs">
                   Không có học sinh nào trong {selectedClassFilter === 'Tất cả' ? 'danh sách' : `Lớp ${selectedClassFilter}`}. Nhấn "Thêm Ô Học Sinh" để tạo tài khoản mới.
                 </td>
               </tr>
