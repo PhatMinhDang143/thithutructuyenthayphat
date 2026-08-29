@@ -34,20 +34,52 @@ export default function App() {
   // Teacher Flow State
   const [teacherSubView, setTeacherSubView] = useState<'dashboard' | 'exams' | 'students' | 'history'>('dashboard');
 
-  // Data Loading
-  const loadData = async () => {
-    setLoading(true);
-    const data = await fetchAllData();
-    setExams(data.exams);
-    setStudents(data.students);
-    setHistory(data.history);
-    setClasses(data.classes);
-    setLoading(false);
+  // Data Loading (supports silent background sync)
+  const loadData = async (showLoadingSpinner: boolean = true) => {
+    if (showLoadingSpinner) setLoading(true);
+    try {
+      const data = await fetchAllData();
+      setExams(data.exams);
+      setStudents(data.students);
+      setHistory(data.history);
+      setClasses(data.classes);
+    } catch (e) {
+      console.warn('Sync error:', e);
+    } finally {
+      if (showLoadingSpinner) setLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    // Initial fetch
+    loadData(true);
+
+    // Cross-tab and window event synchronization
+    const handleSyncEvent = () => {
+      // If student is currently taking an exam, don't interrupt their screen
+      if (studentSubView !== 'exam') {
+        loadData(false);
+      }
+    };
+
+    window.addEventListener('storage', handleSyncEvent);
+    window.addEventListener('app_data_updated', handleSyncEvent);
+    window.addEventListener('focus', handleSyncEvent);
+
+    // Periodic background sync interval (every 8 seconds)
+    const interval = setInterval(() => {
+      if (studentSubView !== 'exam') {
+        loadData(false);
+      }
+    }, 8000);
+
+    return () => {
+      window.removeEventListener('storage', handleSyncEvent);
+      window.removeEventListener('app_data_updated', handleSyncEvent);
+      window.removeEventListener('focus', handleSyncEvent);
+      clearInterval(interval);
+    };
+  }, [studentSubView]);
 
   const handleLogout = () => {
     setCurrentUser(null);

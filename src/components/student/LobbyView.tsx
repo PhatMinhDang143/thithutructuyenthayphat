@@ -132,6 +132,15 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                           <span className="text-[#111111] font-black font-mono">{cfg.start_time.replace('T', ' ')}</span>
                         </div>
                       )}
+
+                      {cfg.end_time && (
+                        <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-[#111111]">
+                          <span className="flex items-center gap-1.5 text-[#E63946]">
+                            <Clock className="w-3.5 h-3.5 text-[#E63946]" /> Hạn chót:
+                          </span>
+                          <span className="text-[#E63946] font-black font-mono">{cfg.end_time.replace('T', ' ')}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 

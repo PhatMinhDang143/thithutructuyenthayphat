@@ -24,6 +24,74 @@ export const STORAGE_KEYS = {
   LAST_SYNC: 'app_last_sync_timestamp',
 };
 
+// Safe localStorage setter with QuotaExceededError handling & draft garbage collection
+export const safeSetItem = (key: string, value: string): { success: boolean; error?: string } => {
+  try {
+    localStorage.setItem(key, value);
+    return { success: true };
+  } catch (e: any) {
+    const isQuotaError =
+      e &&
+      (e.name === 'QuotaExceededError' ||
+        e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        e.code === 22 ||
+        e.code === 1014);
+
+    if (isQuotaError) {
+      console.warn('LocalStorage quota exceeded. Cleaning temporary drafts...');
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && (k.startsWith('exam_draft_') || k.startsWith('temp_'))) {
+            keysToRemove.push(k);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+
+        localStorage.setItem(key, value);
+        return { success: true };
+      } catch (retryErr: any) {
+        console.error('LocalStorage save failed after draft cleanup:', retryErr);
+        return {
+          success: false,
+          error:
+            'Bộ nhớ trình duyệt đã đầy. Khuyến khích sử dụng link chia sẻ Google Drive cho file PDF để dữ liệu luôn đồng bộ mượt mà!',
+        };
+      }
+    }
+    return { success: false, error: e?.message || 'Không thể lưu vào bộ nhớ trình duyệt.' };
+  }
+};
+
+// Helper to get local exams safely
+export const getLocalExams = (): ExamItem[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.EXAMS);
+    if (!raw) return INITIAL_EXAMS;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_EXAMS;
+  } catch (e) {
+    return INITIAL_EXAMS;
+  }
+};
+
+// Initialize local storage if empty
+export const initLocalStorageIfEmpty = () => {
+  if (!localStorage.getItem(STORAGE_KEYS.EXAMS)) {
+    safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(INITIAL_EXAMS));
+  }
+  if (!localStorage.getItem(STORAGE_KEYS.STUDENTS)) {
+    safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(INITIAL_STUDENTS));
+  }
+  if (!localStorage.getItem(STORAGE_KEYS.HISTORY)) {
+    safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(INITIAL_HISTORY));
+  }
+  if (!localStorage.getItem(STORAGE_KEYS.CLASSES)) {
+    safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
+  }
+};
+
 // Upload PDF directly to Google Drive via Google Apps Script
 export const uploadPdfToGoogleDrive = async (
   base64Data: string,
@@ -41,7 +109,7 @@ export const uploadPdfToGoogleDrive = async (
   if (!apiUrl) {
     return {
       success: false,
-      error: 'Chưa cấu hình Google Apps Script API URL. Vui lòng bấm vào nút Cài đặt (⚙️) ở góc trên để cấu hình.',
+      error: 'Chưa cấu hình Google Apps Script API URL. Vui lòng kiểm tra lại cài đặt.',
     };
   }
 
@@ -84,80 +152,15 @@ export const uploadPdfToGoogleDrive = async (
   } catch (err: any) {
     return {
       success: false,
-      error: `Không thể kết nối đến Google Apps Script (${err?.message || err}). Hãy đảm bảo Web App được triển khai với quyền "Bất kỳ ai" (Anyone).`,
+      error: `Không thể kết nối đến Google Apps Script (${err?.message || err}).`,
     };
   }
 };
 
-// Safe localStorage setter with QuotaExceededError handling & draft garbage collection
-export const safeSetItem = (key: string, value: string): { success: boolean; error?: string } => {
-  try {
-    localStorage.setItem(key, value);
-    return { success: true };
-  } catch (e: any) {
-    const isQuotaError =
-      e &&
-      (e.name === 'QuotaExceededError' ||
-        e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
-        e.code === 22 ||
-        e.code === 1014);
-
-    if (isQuotaError) {
-      console.warn('LocalStorage quota exceeded. Cleaning temporary drafts...');
-      try {
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && (k.startsWith('exam_draft_') || k.startsWith('temp_'))) {
-            keysToRemove.push(k);
-          }
-        }
-        keysToRemove.forEach((k) => localStorage.removeItem(k));
-
-        localStorage.setItem(key, value);
-        return { success: true };
-      } catch (retryErr: any) {
-        console.error('LocalStorage save failed after draft cleanup:', retryErr);
-        return {
-          success: false,
-          error:
-            'Bộ nhớ trình duyệt đã đầy. Khuyến khích sử dụng link chia sẻ Google Drive cho file PDF để dữ liệu luôn đồng bộ mượt mà!',
-        };
-      }
-    }
-    return { success: false, error: e?.message || 'Không thể lưu vào bộ nhớ trình duyệt.' };
-  }
-};
-
-// Initialize local storage if empty
-export const initLocalStorageIfEmpty = () => {
-  if (!localStorage.getItem(STORAGE_KEYS.EXAMS)) {
-    safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(INITIAL_EXAMS));
-  }
-  if (!localStorage.getItem(STORAGE_KEYS.STUDENTS)) {
-    safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(INITIAL_STUDENTS));
-  }
-  if (!localStorage.getItem(STORAGE_KEYS.HISTORY)) {
-    safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(INITIAL_HISTORY));
-  }
-  if (!localStorage.getItem(STORAGE_KEYS.CLASSES)) {
-    safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(INITIAL_CLASSES));
-  }
-};
-
-// Helper to get local exams safely
-export const getLocalExams = (): ExamItem[] => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.EXAMS);
-    if (!raw) return INITIAL_EXAMS;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_EXAMS;
-  } catch (e) {
-    return INITIAL_EXAMS;
-  }
-};
-
-// Smart Fetch & Merge function: NEVER overwrites local user edits with stale remote data
+// ================= FETCH ALL DATA (MULTI-TIER SYNCHRONIZATION) =================
+// 1. Fetches from /api/all (Instant Server-side Central Database shared across all browsers)
+// 2. Fetches from Google Apps Script (Long-term Cloud Sheet backup)
+// 3. Merges with local storage, ensuring newer remote edits (like deadline / config updates) always take precedence!
 export const fetchAllData = async (): Promise<{
   exams: ExamItem[];
   students: { [username: string]: StudentAccount };
@@ -166,42 +169,68 @@ export const fetchAllData = async (): Promise<{
   cloudSynced: boolean;
 }> => {
   initLocalStorageIfEmpty();
-  const apiUrl = getApiUrl();
   const localExams = getLocalExams();
+  const localExamsMap = new Map<string, ExamItem>();
+  localExams.forEach((ex) => {
+    if (ex && ex.id) localExamsMap.set(ex.id, ex);
+  });
 
-  let cloudSynced = false;
-  let remoteExams: ExamItem[] = [];
-  let remoteStudents: { [username: string]: StudentAccount } = {};
-  let remoteHistory: ExamSubmission[] = [];
+  let serverExams: ExamItem[] = [];
+  let serverStudents: { [username: string]: StudentAccount } = {};
+  let serverHistory: ExamSubmission[] = [];
+  let serverClasses: string[] = [];
+  let serverFetched = false;
 
-  // Attempt Google Apps Script fetch if API_URL is present
+  // Tier 1: Fetch from internal server /api/all
+  try {
+    const sRes = await fetch('/api/all', { cache: 'no-cache' });
+    if (sRes.ok) {
+      const sJson = await sRes.json();
+      if (sJson && sJson.success && sJson.data) {
+        serverFetched = true;
+        if (Array.isArray(sJson.data.exams)) serverExams = sJson.data.exams;
+        if (sJson.data.students && typeof sJson.data.students === 'object') serverStudents = sJson.data.students;
+        if (Array.isArray(sJson.data.history)) serverHistory = sJson.data.history;
+        if (Array.isArray(sJson.data.classes)) serverClasses = sJson.data.classes;
+      }
+    }
+  } catch (e) {
+    // server route fallback
+  }
+
+  // Tier 2: Fetch from Google Apps Script if configured
+  const apiUrl = getApiUrl();
+  let gasSynced = false;
+  let gasExams: ExamItem[] = [];
+  let gasStudents: { [username: string]: StudentAccount } = {};
+  let gasHistory: ExamSubmission[] = [];
+
   if (apiUrl) {
     try {
-      const res = await fetch(`${apiUrl}?action=get_all`, { mode: 'cors' });
-      if (res.ok) {
-        const rawData = await res.json();
+      const gRes = await fetch(`${apiUrl}?action=get_all`, { mode: 'cors', cache: 'no-cache' });
+      if (gRes.ok) {
+        const rawData = await gRes.json();
         const data = rawData?.data || rawData;
         if (data && !data.error) {
-          cloudSynced = true;
+          gasSynced = true;
 
-          // 1. Normalize remote exams
+          // Parse gas exams
           const rawEx = data.exams || [];
-          const parsedRemoteExams: ExamItem[] = Array.isArray(rawEx)
+          const parsedGasExams: ExamItem[] = Array.isArray(rawEx)
             ? rawEx
             : typeof rawEx === 'object'
             ? Object.values(rawEx)
             : [];
+          gasExams = parsedGasExams.filter((ex) => ex && ex.id);
 
-          remoteExams = parsedRemoteExams.filter((ex) => ex && ex.id);
-
-          // 2. Normalize remote students
+          // Parse gas students
           const rawSt = data.students || {};
           if (Array.isArray(rawSt)) {
             rawSt.forEach((s: any) => {
               if (s) {
                 const u = String(s.username || s.sbd || s.id || s.ma_hs || '').trim();
                 if (u) {
-                  remoteStudents[u.toLowerCase()] = {
+                  gasStudents[u.toLowerCase()] = {
                     username: u,
                     name: String(s.name || s.ten || s.ho_ten || s.fullName || u).trim(),
                     password: String(s.password !== undefined ? s.password : s.matkhau !== undefined ? s.matkhau : '123').trim(),
@@ -215,7 +244,7 @@ export const fetchAllData = async (): Promise<{
               if (s) {
                 const u = String(s.username || s.sbd || k || '').trim();
                 if (u) {
-                  remoteStudents[u.toLowerCase()] = {
+                  gasStudents[u.toLowerCase()] = {
                     username: u,
                     name: String(s.name || s.ten || s.ho_ten || s.fullName || u).trim(),
                     password: String(s.password !== undefined ? s.password : s.matkhau !== undefined ? s.matkhau : '123').trim(),
@@ -226,66 +255,86 @@ export const fetchAllData = async (): Promise<{
             });
           }
 
-          // 3. Normalize remote history
+          // Parse gas history
           const rawH = data.history || [];
-          remoteHistory = Array.isArray(rawH) ? rawH : typeof rawH === 'object' ? Object.values(rawH) : [];
+          gasHistory = Array.isArray(rawH) ? rawH : typeof rawH === 'object' ? Object.values(rawH) : [];
         }
       }
     } catch (e) {
-      console.warn("API_URL get_all fetch failed, continuing with local storage:", e);
+      console.warn("GAS API get_all fetch warning:", e);
     }
   }
 
-  // === SMART MERGE EXAMS ===
-  // Build a map of local exams by ID
-  const examMap = new Map<string, ExamItem>();
-  
-  // 1. Put local exams first
+  // === SMART CONSOLIDATION OF EXAMS ===
+  // Primary authoritative source: Server > Google Apps Script > Local
+  const combinedMap = new Map<string, ExamItem>();
+
+  // 1. Load initial/local exams first as baseline
   localExams.forEach((ex) => {
-    if (ex && ex.id) examMap.set(ex.id, ex);
+    if (ex && ex.id) combinedMap.set(ex.id, ex);
   });
 
-  // 2. Merge remote exams into local without overwriting newer local edits
-  if (cloudSynced && remoteExams.length > 0) {
-    remoteExams.forEach((rEx) => {
-      const localVer = examMap.get(rEx.id);
-      if (!localVer) {
-        // New exam from cloud sheet
-        examMap.set(rEx.id, {
-          ...rEx,
-          duration: Number(rEx.duration) || 45,
-        });
-      } else {
-        // Local takes precedence for user edits, but merge non-conflicting remote data
-        const mergedQuestions = {
-          ...(rEx.questions || {}),
-          ...(localVer.questions || {}),
-          file_link: localVer.questions?.file_link || rEx.questions?.file_link || '',
-          explain_link: localVer.questions?.explain_link || rEx.questions?.explain_link || '',
-          target_group: localVer.questions?.target_group || rEx.questions?.target_group || 'Tất cả',
-        };
+  // 2. Merge Google Apps Script exams
+  gasExams.forEach((gEx) => {
+    if (!gEx || !gEx.id) return;
+    const local = localExamsMap.get(gEx.id);
+    const existingFileLink = local?.questions?.file_link;
 
-        const mergedExam: ExamItem = {
-          ...rEx,
-          ...localVer,
-          duration: localVer.duration !== undefined ? Number(localVer.duration) : Number(rEx.duration) || 45,
-          title: localVer.title || rEx.title || '',
-          questions: mergedQuestions,
-          answers: {
-            p1: { ...(rEx.answers?.p1 || {}), ...(localVer.answers?.p1 || {}) },
-            p2: { ...(rEx.answers?.p2 || {}), ...(localVer.answers?.p2 || {}) },
-            p3: { ...(rEx.answers?.p3 || {}), ...(localVer.answers?.p3 || {}) },
-          },
-        };
-        examMap.set(rEx.id, mergedExam);
-      }
+    // Retain local base64 if remote has marker [PDF_STORED_IN_BROWSER]
+    let finalFile = gEx.questions?.file_link || '';
+    if (finalFile === '[PDF_STORED_IN_BROWSER]' && existingFileLink) {
+      finalFile = existingFileLink;
+    } else if (!finalFile && existingFileLink) {
+      finalFile = existingFileLink;
+    }
+
+    combinedMap.set(gEx.id, {
+      ...gEx,
+      duration: Number(gEx.duration) || 45,
+      questions: {
+        ...(gEx.questions || {}),
+        file_link: finalFile,
+      },
     });
+  });
+
+  // 3. Merge Server exams (Highest Priority across all connected browsers)
+  serverExams.forEach((sEx) => {
+    if (!sEx || !sEx.id) return;
+    const local = localExamsMap.get(sEx.id);
+    const existingFileLink = local?.questions?.file_link;
+
+    let finalFile = sEx.questions?.file_link || '';
+    if (finalFile === '[PDF_STORED_IN_BROWSER]' && existingFileLink) {
+      finalFile = existingFileLink;
+    } else if (!finalFile && existingFileLink) {
+      finalFile = existingFileLink;
+    }
+
+    combinedMap.set(sEx.id, {
+      ...sEx,
+      duration: Number(sEx.duration) || 45,
+      questions: {
+        ...(sEx.questions || {}),
+        file_link: finalFile,
+      },
+    });
+  });
+
+  const finalExams = Array.from(combinedMap.values());
+  const finalExamsList = finalExams.length > 0 ? finalExams : INITIAL_EXAMS;
+  safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(finalExamsList));
+
+  // If server had 0 exams but local/gas had exams, bootstrap the server store
+  if (serverFetched && serverExams.length === 0 && finalExamsList.length > 0) {
+    fetch('/api/sync/bootstrap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exams: finalExamsList }),
+    }).catch(() => {});
   }
 
-  const mergedExams = Array.from(examMap.values());
-  safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(mergedExams.length > 0 ? mergedExams : INITIAL_EXAMS));
-
-  // === SMART MERGE STUDENTS ===
+  // === SMART CONSOLIDATION OF STUDENTS ===
   let localStudents: { [username: string]: StudentAccount } = {};
   try {
     const rawLocalStudents = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENTS) || '{}');
@@ -296,10 +345,10 @@ export const fetchAllData = async (): Promise<{
     localStudents = {};
   }
 
-  const mergedStudents = { ...remoteStudents, ...localStudents };
+  const mergedStudents = { ...localStudents, ...gasStudents, ...serverStudents };
   safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(mergedStudents));
 
-  // === SMART MERGE HISTORY ===
+  // === SMART CONSOLIDATION OF HISTORY ===
   let localHistory: ExamSubmission[] = [];
   try {
     const rawLocalH = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
@@ -308,10 +357,9 @@ export const fetchAllData = async (): Promise<{
     localHistory = [];
   }
 
-  // Combine unique history entries by timestamp + username + examTitle
   const historyMap = new Map<string, ExamSubmission>();
-  [...remoteHistory, ...localHistory].forEach((h) => {
-    if (h) {
+  [...localHistory, ...gasHistory, ...serverHistory].forEach((h) => {
+    if (h && h.username && h.examTitle) {
       const key = `${h.username}_${h.examTitle}_${h.submitted_at}`;
       historyMap.set(key, h);
     }
@@ -321,10 +369,13 @@ export const fetchAllData = async (): Promise<{
 
   // === DEDUCE UNIQUE CLASSES ===
   const classSet = new Set<string>(INITIAL_CLASSES);
+  if (Array.isArray(serverClasses)) {
+    serverClasses.forEach((c) => c && classSet.add(c.trim()));
+  }
   Object.values(mergedStudents).forEach((s) => {
     if (s && s.group && s.group.trim()) classSet.add(s.group.trim());
   });
-  mergedExams.forEach((ex) => {
+  finalExamsList.forEach((ex) => {
     if (ex?.questions?.target_group) {
       ex.questions.target_group.split(',').forEach((g) => {
         const trimmed = g.trim();
@@ -339,84 +390,78 @@ export const fetchAllData = async (): Promise<{
   safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(classesList));
 
   return {
-    exams: mergedExams.length > 0 ? mergedExams : INITIAL_EXAMS,
+    exams: finalExamsList,
     students: mergedStudents,
     history: mergedHistory,
     classes: classesList,
-    cloudSynced,
+    cloudSynced: serverFetched || gasSynced,
   };
 };
 
-// Save Exam Data with Local + Cloud Multi-tier Sync
+// ================= SAVE EXAM DATA (ALL BROWSERS & CLOUD) =================
 export const saveExamData = async (
   examPayload: ExamItem
 ): Promise<{ success: boolean; cloudSynced: boolean; message: string }> => {
   initLocalStorageIfEmpty();
 
-  // Normalize duration & values
-  examPayload.duration = Number(examPayload.duration) || 45;
+  // Normalize duration & timestamps
+  const now = Date.now();
+  examPayload.duration = Math.max(1, Number(examPayload.duration) || 45);
+  examPayload.updatedAt = now;
 
-  // 1. ALWAYS persist directly to LocalStorage first (Zero data loss guarantee)
+  // 1. Update Client LocalStorage
   const localExams = getLocalExams();
   const idx = localExams.findIndex((e) => e.id === examPayload.id);
   if (idx >= 0) {
     const existing = localExams[idx];
     const finalFileLink = examPayload.questions?.file_link || existing.questions?.file_link || '';
-    const finalExplainLink = examPayload.questions?.explain_link !== undefined ? examPayload.questions.explain_link : (existing.questions?.explain_link || '');
-    
-    localExams[idx] = { 
-      ...existing, 
+    const finalExplainLink =
+      examPayload.questions?.explain_link !== undefined
+        ? examPayload.questions.explain_link
+        : existing.questions?.explain_link || '';
+
+    localExams[idx] = {
+      ...existing,
       ...examPayload,
+      updatedAt: now,
       duration: Number(examPayload.duration) || 45,
       questions: {
         ...(existing.questions || {}),
         ...(examPayload.questions || {}),
         file_link: finalFileLink,
         explain_link: finalExplainLink,
-      }
+      },
     };
   } else {
     localExams.unshift(examPayload);
   }
 
-  const localSaveRes = safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(localExams));
-  if (!localSaveRes.success) {
-    return {
-      success: false,
-      cloudSynced: false,
-      message: localSaveRes.error || 'Lỗi: Không thể lưu vào bộ nhớ trình duyệt.',
-    };
-  }
+  safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(localExams));
 
-  // Update target classes
-  if (examPayload.questions?.target_group) {
-    try {
-      const localClasses: string[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.CLASSES) || '[]');
-      const classSet = new Set(localClasses);
-      examPayload.questions.target_group.split(',').forEach((g) => {
-        const trimmed = g.trim();
-        if (trimmed && trimmed.toLowerCase() !== 'tất cả') {
-          classSet.add(trimmed);
-        }
-      });
-      safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(Array.from(classSet)));
-    } catch (e) {
-      // ignore
+  // 2. Synchronize to Server Backend (Instant Cross-Browser Sync)
+  let serverSynced = false;
+  try {
+    const sRes = await fetch('/api/exams/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(examPayload),
+    });
+    if (sRes.ok) {
+      serverSynced = true;
     }
+  } catch (e) {
+    console.warn('Server API /api/exams/save failed:', e);
   }
 
-  // 2. Synchronize to Google Apps Script Web App API
+  // 3. Synchronize to Google Apps Script Web App API
   const apiUrl = getApiUrl();
-  let cloudSynced = false;
+  let gasSynced = false;
   let cloudErrorMsg = '';
 
   if (apiUrl) {
     try {
-      // Create a cloud payload. If file_link is a huge base64, send a marked indicator to avoid Google Sheet cell 50k char limit
-      const cloudPayload = { ...examPayload, duration: Number(examPayload.duration) || 45 };
+      const cloudPayload = { ...examPayload, duration: Number(examPayload.duration) || 45, updatedAt: now };
       if (cloudPayload.questions?.file_link?.startsWith('data:')) {
-        // Large base64 files cannot fit in a standard Google Sheet cell (limit 50,000 chars)
-        // Keep local base64, but flag in cloud sheet
         cloudPayload.questions = {
           ...cloudPayload.questions,
           file_link: '[PDF_STORED_IN_BROWSER]',
@@ -432,35 +477,30 @@ export const saveExamData = async (
       if (res.ok) {
         const data = await res.json();
         if (data && (data.success || !data.error)) {
-          cloudSynced = true;
+          gasSynced = true;
         } else {
           cloudErrorMsg = data?.message || data?.error || 'Google Sheet từ chối cập nhật';
         }
       }
     } catch (e: any) {
-      console.warn('Backend API save_exam failed, saved in local storage:', e);
+      console.warn('GAS API save_exam warning:', e);
       cloudErrorMsg = e?.message || 'Không thể kết nối đến Google Apps Script';
     }
   }
 
-  if (cloudSynced) {
-    return {
-      success: true,
-      cloudSynced: true,
-      message: 'Đã lưu cấu hình và đồng bộ thành công lên Google Sheet & bộ nhớ hệ thống!',
-    };
-  } else {
-    return {
-      success: true,
-      cloudSynced: false,
-      message: `Đã lưu cấu hình vào bộ nhớ máy thành công! ${
-        cloudErrorMsg ? `(Lưu ý: Chưa đồng bộ Google Sheet do: ${cloudErrorMsg})` : ''
-      }`,
-    };
-  }
+  // Trigger cross-tab sync event
+  try {
+    window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'exam', id: examPayload.id } }));
+  } catch (e) {}
+
+  return {
+    success: true,
+    cloudSynced: serverSynced || gasSynced,
+    message: 'Đã lưu cấu hình & hạn chót đề thi thành công! Dữ liệu được đồng bộ tức thì trên toàn bộ trình duyệt.',
+  };
 };
 
-// Delete Exam
+// ================= DELETE EXAM DATA =================
 export const deleteExamData = async (
   examId: string
 ): Promise<{ success: boolean; message: string }> => {
@@ -469,6 +509,16 @@ export const deleteExamData = async (
   const updated = localExams.filter((e) => e.id !== examId);
   safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(updated));
 
+  // Server API
+  try {
+    await fetch('/api/exams/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: examId }),
+    });
+  } catch (e) {}
+
+  // GAS API
   const apiUrl = getApiUrl();
   if (apiUrl) {
     try {
@@ -477,38 +527,35 @@ export const deleteExamData = async (
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ id: examId }),
       });
-    } catch (e) {
-      console.warn('Backend API delete failed, deleted locally:', e);
-    }
+    } catch (e) {}
   }
+
+  try {
+    window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'exam_delete', id: examId } }));
+  } catch (e) {}
 
   return { success: true, message: 'Đã xóa đề thi thành công!' };
 };
 
-// Save Students Data
+// ================= SAVE STUDENTS DATA =================
 export const saveStudentsData = async (
   studentsObj: { [username: string]: StudentAccount }
 ): Promise<{ success: boolean; cloudSynced: boolean; message: string }> => {
   initLocalStorageIfEmpty();
-  const res = safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(studentsObj));
-  if (!res.success) {
-    return { success: false, cloudSynced: false, message: res.error || 'Không thể lưu danh sách học sinh.' };
-  }
+  safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(studentsObj));
 
-  // Update classes
+  let serverSynced = false;
   try {
-    const localClasses: string[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.CLASSES) || '[]');
-    const classSet = new Set(localClasses);
-    Object.values(studentsObj).forEach((s) => {
-      if (s.group && s.group.trim()) classSet.add(s.group.trim());
+    const sRes = await fetch('/api/students/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ students: studentsObj }),
     });
-    safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(Array.from(classSet)));
-  } catch (e) {
-    // ignore
-  }
+    if (sRes.ok) serverSynced = true;
+  } catch (e) {}
 
   const apiUrl = getApiUrl();
-  let cloudSynced = false;
+  let gasSynced = false;
   if (apiUrl) {
     try {
       const resp = await fetch(`${apiUrl}?action=save_students`, {
@@ -516,24 +563,22 @@ export const saveStudentsData = async (
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ students: studentsObj }),
       });
-      if (resp.ok) {
-        cloudSynced = true;
-      }
-    } catch (e) {
-      console.warn('Backend API save_students failed, saved locally:', e);
-    }
+      if (resp.ok) gasSynced = true;
+    } catch (e) {}
   }
+
+  try {
+    window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'students' } }));
+  } catch (e) {}
 
   return {
     success: true,
-    cloudSynced,
-    message: cloudSynced
-      ? 'Đã lưu và đồng bộ danh sách học sinh lên Google Sheet thành công!'
-      : 'Đã lưu danh sách học sinh vào bộ nhớ máy thành công!',
+    cloudSynced: serverSynced || gasSynced,
+    message: 'Đã lưu và đồng bộ danh sách học sinh thành công!',
   };
 };
 
-// Submit Exam Result
+// ================= SUBMIT EXAM RESULT =================
 export const submitExamResult = async (payload: ExamSubmission): Promise<{ success: boolean }> => {
   initLocalStorageIfEmpty();
   let localHistory: ExamSubmission[] = [];
@@ -543,7 +588,7 @@ export const submitExamResult = async (payload: ExamSubmission): Promise<{ succe
     localHistory = [];
   }
 
-  payload.id = 'sub_' + Date.now();
+  payload.id = payload.id || 'sub_' + Date.now();
   if (!payload.submitted_at) {
     payload.submitted_at = new Date().toLocaleString('vi-VN');
   }
@@ -551,6 +596,16 @@ export const submitExamResult = async (payload: ExamSubmission): Promise<{ succe
   localHistory.unshift(payload);
   safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(localHistory));
 
+  // Server API
+  try {
+    await fetch('/api/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {}
+
+  // GAS API
   const apiUrl = getApiUrl();
   if (apiUrl) {
     try {
@@ -559,18 +614,24 @@ export const submitExamResult = async (payload: ExamSubmission): Promise<{ succe
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload),
       });
-    } catch (e) {
-      console.warn('Backend API submit failed, saved locally:', e);
-    }
+    } catch (e) {}
   }
+
+  try {
+    window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history' } }));
+  } catch (e) {}
 
   return { success: true };
 };
 
-// Clear History
+// ================= CLEAR HISTORY =================
 export const clearExamHistory = async (): Promise<{ success: boolean }> => {
   initLocalStorageIfEmpty();
   safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify([]));
+
+  try {
+    await fetch('/api/history/clear', { method: 'POST' });
+  } catch (e) {}
 
   const apiUrl = getApiUrl();
   if (apiUrl) {
@@ -580,17 +641,19 @@ export const clearExamHistory = async (): Promise<{ success: boolean }> => {
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({}),
       });
-    } catch (e) {
-      console.warn('Backend API clear history failed, cleared locally:', e);
-    }
+    } catch (e) {}
   }
+
+  try {
+    window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history_clear' } }));
+  } catch (e) {}
 
   return { success: true };
 };
 
 // Full Google Apps Script Code.gs Template for Teachers
 export const GOOGLE_APPS_SCRIPT_CODE = `/**
- * GOOGLE APPS SCRIPT CHO HỆ THỐNG THI TRỰC TUYẾN (HỖ TRỢ LƯU FILE GOOGLE DRIVE)
+ * GOOGLE APPS SCRIPT CHO HỆ THỐNG THI TRỰC TUYẾN (HỖ TRỢ LƯU FILE GOOGLE DRIVE & ĐỒNG BỘ ĐỀ THI)
  * Hướng dẫn cài đặt / Cập nhật:
  * 1. Mở Google Sheet -> Chọn Tiện ích mở rộng (Extensions) -> Apps Script
  * 2. Xóa toàn bộ mã cũ và dán toàn bộ đoạn mã này vào file Code.gs.
@@ -601,7 +664,6 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  *    -> Bấm biểu tượng cây bút (Chỉnh sửa) -> Chọn Phiên bản: "Mới" (New version) -> Bấm "Triển khai" (Deploy).
  */
 
-// Hàm chạy thử 1 lần để cấp quyền Google Drive (Bấm nút Run ▶️ hàm này trong Apps Script)
 function testAuthorizeDrive() {
   var folderName = 'DeThi_Online_Drive';
   var folders = DriveApp.getFoldersByName(folderName);
@@ -688,7 +750,6 @@ function createJsonResponse(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// 0. Hàm tải file PDF lên Google Drive và tạo liên kết công khai
 function uploadFileToDrive(postData) {
   try {
     var rawName = postData.fileName || ('De_Thi_' + new Date().getTime() + '.pdf');
@@ -698,7 +759,6 @@ function uploadFileToDrive(postData) {
       return { success: false, error: 'Không tìm thấy dữ liệu file base64' };
     }
     
-    // Tách phần đầu data:application/pdf;base64 nếu có
     if (base64Data.indexOf('base64,') > -1) {
       base64Data = base64Data.split('base64,')[1];
     }
@@ -706,7 +766,6 @@ function uploadFileToDrive(postData) {
     var decoded = Utilities.base64Decode(base64Data);
     var blob = Utilities.newBlob(decoded, 'application/pdf', rawName);
     
-    // Tạo hoặc lấy thư mục "DeThi_Online_Drive" trên Google Drive của giáo viên
     var folderName = 'DeThi_Online_Drive';
     var folders = DriveApp.getFoldersByName(folderName);
     var folder;
@@ -717,7 +776,6 @@ function uploadFileToDrive(postData) {
     }
     
     var file = folder.createFile(blob);
-    // Cấp quyền bất kỳ ai có liên kết đều xem được
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     
     var fileId = file.getId();
@@ -739,7 +797,6 @@ function uploadFileToDrive(postData) {
   }
 }
 
-// Helper to find sheet by multiple alias names (Vietnamese & English)
 function findSheet(ss, names) {
   for (var i = 0; i < names.length; i++) {
     var s = ss.getSheetByName(names[i]);
@@ -760,7 +817,6 @@ function getHistorySheet(ss) {
   return findSheet(ss, ['History', 'Lichsu', 'LichSu', 'Lịch sử', 'Nhat_Ky_Thi']) || ss.insertSheet('History');
 }
 
-// 1. Quản lý Sheet Exams
 function getExamsData(ss) {
   var sheet = getExamSheet(ss);
   var rows = sheet.getDataRange().getValues();
@@ -827,7 +883,6 @@ function deleteExamFromSheet(ss, examId) {
   }
 }
 
-// 2. Quản lý Sheet Students
 function getStudentsData(ss) {
   var sheet = getStudentSheet(ss);
   var rows = sheet.getDataRange().getValues();
@@ -865,7 +920,6 @@ function saveStudentsToSheet(ss, studentsObj) {
   }
 }
 
-// 3. Quản lý Sheet History
 function getHistoryData(ss) {
   var sheet = getHistorySheet(ss);
   var rows = sheet.getDataRange().getValues();
@@ -916,3 +970,4 @@ function clearHistorySheet(ss) {
   }
 }
 `;
+

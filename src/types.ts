@@ -46,6 +46,7 @@ export interface ExamItem {
   duration: number; // in minutes
   questions: ExamQuestionsConfig;
   answers: AnswerKeys;
+  updatedAt?: number; // epoch timestamp in ms
 }
 
 export interface StudentAnswers {

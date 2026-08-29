@@ -103,6 +103,13 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh 
                       <span>Giờ Mở: {cfg.start_time.replace('T', ' ')}</span>
                     </div>
                   )}
+
+                  {cfg.end_time && (
+                    <div className="flex items-center gap-2 text-[11px] text-[#E63946] font-black">
+                      <Clock className="w-3.5 h-3.5 text-[#E63946]" />
+                      <span>Hạn Chót (Deadline): {cfg.end_time.replace('T', ' ')}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

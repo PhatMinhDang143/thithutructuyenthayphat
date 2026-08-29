@@ -1,5 +1,123 @@
 @import "tailwindcss";
 
+/* ================= THEME DEFINITIONS & SYSTEM VARIABLES ================= */
+:root,
+html.theme-retro {
+  --app-bg: #FDF6E9;
+  --app-surface: #FFFFFF;
+  --app-subtle: #FDF6E9;
+  --app-primary: #FFC93C;
+  --app-primary-hover: #ffd460;
+  --app-primary-text: #111111;
+  --app-secondary: #4D6BFE;
+  --app-secondary-hover: #637efe;
+  --app-secondary-text: #FFFFFF;
+  --app-text: #111111;
+  --app-text-muted: #525252;
+  --app-border: #111111;
+  --app-shadow-color: #111111;
+  --app-accent-green: #0F9D58;
+  --app-accent-red: #E63946;
+  --app-header-bg: #FFFFFF;
+}
+
+html.theme-ocean {
+  --app-bg: #EFF6FF;
+  --app-surface: #FFFFFF;
+  --app-subtle: #DBEAFE;
+  --app-primary: #2563EB;
+  --app-primary-hover: #1D4ED8;
+  --app-primary-text: #FFFFFF;
+  --app-secondary: #0284C7;
+  --app-secondary-hover: #0369A1;
+  --app-secondary-text: #FFFFFF;
+  --app-text: #0F172A;
+  --app-text-muted: #334155;
+  --app-border: #0F172A;
+  --app-shadow-color: #0F172A;
+  --app-accent-green: #059669;
+  --app-accent-red: #DC2626;
+  --app-header-bg: #FFFFFF;
+}
+
+html.theme-mint {
+  --app-bg: #F0FDF4;
+  --app-surface: #FFFFFF;
+  --app-subtle: #DCFCE7;
+  --app-primary: #059669;
+  --app-primary-hover: #047857;
+  --app-primary-text: #FFFFFF;
+  --app-secondary: #0D9488;
+  --app-secondary-hover: #0F766E;
+  --app-secondary-text: #FFFFFF;
+  --app-text: #064E3B;
+  --app-text-muted: #047857;
+  --app-border: #064E3B;
+  --app-shadow-color: #064E3B;
+  --app-accent-green: #10B981;
+  --app-accent-red: #E11D48;
+  --app-header-bg: #FFFFFF;
+}
+
+html.theme-lavender {
+  --app-bg: #FAF5FF;
+  --app-surface: #FFFFFF;
+  --app-subtle: #F3E8FF;
+  --app-primary: #7C3AED;
+  --app-primary-hover: #6D28D9;
+  --app-primary-text: #FFFFFF;
+  --app-secondary: #6366F1;
+  --app-secondary-hover: #4F46E5;
+  --app-secondary-text: #FFFFFF;
+  --app-text: #2E1065;
+  --app-text-muted: #581C87;
+  --app-border: #2E1065;
+  --app-shadow-color: #2E1065;
+  --app-accent-green: #059669;
+  --app-accent-red: #E11D48;
+  --app-header-bg: #FFFFFF;
+}
+
+html.theme-coral {
+  --app-bg: #FFF1F2;
+  --app-surface: #FFFFFF;
+  --app-subtle: #FFE4E6;
+  --app-primary: #E11D48;
+  --app-primary-hover: #BE123C;
+  --app-primary-text: #FFFFFF;
+  --app-secondary: #EA580C;
+  --app-secondary-hover: #C2410C;
+  --app-secondary-text: #FFFFFF;
+  --app-text: #4C0519;
+  --app-text-muted: #9F1239;
+  --app-border: #4C0519;
+  --app-shadow-color: #4C0519;
+  --app-accent-green: #059669;
+  --app-accent-red: #E11D48;
+  --app-header-bg: #FFFFFF;
+}
+
+html.theme-dark {
+  color-scheme: dark;
+  --app-bg: #121215;
+  --app-surface: #1C1C22;
+  --app-subtle: #272730;
+  --app-primary: #FFC93C;
+  --app-primary-hover: #ffd460;
+  --app-primary-text: #111111;
+  --app-secondary: #60A5FA;
+  --app-secondary-hover: #93C5FD;
+  --app-secondary-text: #111111;
+  --app-text: #F4F4F5;
+  --app-text-muted: #A1A1AA;
+  --app-border: #3F3F46;
+  --app-shadow-color: #000000;
+  --app-accent-green: #34D399;
+  --app-accent-red: #F87171;
+  --app-header-bg: #18181D;
+}
+
+/* Base Body System Sync */
 html,
 body,
 #root {
@@ -7,9 +125,100 @@ body,
   min-height: 100dvh;
   margin: 0;
   padding: 0;
-  background-color: #FDF6E9;
-  color: #111111;
+  background-color: var(--app-bg) !important;
+  color: var(--app-text) !important;
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Universal Theme Mapping Overrides across all pages & components */
+.bg-\[\#FDF6E9\] {
+  background-color: var(--app-subtle) !important;
+}
+
+.bg-white {
+  background-color: var(--app-surface) !important;
+}
+
+.bg-\[\#FFC93C\] {
+  background-color: var(--app-primary) !important;
+  color: var(--app-primary-text) !important;
+}
+
+.hover\:bg-\[\#ffd460\]:hover {
+  background-color: var(--app-primary-hover) !important;
+}
+
+.bg-\[\#4D6BFE\] {
+  background-color: var(--app-secondary) !important;
+  color: var(--app-secondary-text) !important;
+}
+
+.hover\:bg-\[\#637efe\]:hover {
+  background-color: var(--app-secondary-hover) !important;
+}
+
+.text-\[\#4D6BFE\] {
+  color: var(--app-secondary) !important;
+}
+
+.text-\[\#FFC93C\] {
+  color: var(--app-primary) !important;
+}
+
+.text-\[\#111111\] {
+  color: var(--app-text) !important;
+}
+
+.border-\[\#111111\] {
+  border-color: var(--app-border) !important;
+}
+
+header.bg-\[\#FFFFFF\] {
+  background-color: var(--app-header-bg) !important;
+}
+
+/* Synchronize dynamic shadows */
+.shadow-\[1px_1px_0px_\#111111\] {
+  box-shadow: 1px 1px 0px var(--app-shadow-color) !important;
+}
+.shadow-\[2px_2px_0px_\#111111\] {
+  box-shadow: 2px 2px 0px var(--app-shadow-color) !important;
+}
+.shadow-\[3px_3px_0px_\#111111\] {
+  box-shadow: 3px 3px 0px var(--app-shadow-color) !important;
+}
+.shadow-\[4px_4px_0px_\#111111\] {
+  box-shadow: 4px 4px 0px var(--app-shadow-color) !important;
+}
+.shadow-\[5px_5px_0px_\#111111\] {
+  box-shadow: 5px 5px 0px var(--app-shadow-color) !important;
+}
+.shadow-\[6px_6px_0px_\#111111\] {
+  box-shadow: 6px 6px 0px var(--app-shadow-color) !important;
+}
+.shadow-\[7px_7px_0px_\#111111\],
+.hover\:shadow-\[7px_7px_0px_\#111111\]:hover {
+  box-shadow: 7px 7px 0px var(--app-shadow-color) !important;
+}
+.shadow-\[8px_8px_0px_\#111111\] {
+  box-shadow: 8px 8px 0px var(--app-shadow-color) !important;
+}
+.shadow-\[0_2px_0px_\#111111\] {
+  box-shadow: 0 2px 0px var(--app-shadow-color) !important;
+}
+
+/* In dark mode, ensure text muted is readable */
+html.theme-dark .text-neutral-700,
+html.theme-dark .text-neutral-800,
+html.theme-dark .text-neutral-600 {
+  color: var(--app-text-muted) !important;
+}
+
+html.theme-dark .bg-\[\#FAF8F5\],
+html.theme-dark .bg-\[\#FDF6E9\] {
+  background-color: var(--app-subtle) !important;
+  color: var(--app-text) !important;
 }
 
 @layer utilities {
@@ -175,14 +384,14 @@ body,
     height: 84dvh !important;
     max-height: 86dvh !important;
     z-index: 50;
-    border-top: 3px solid #111111;
+    border-top: 3px solid var(--app-border);
     box-shadow: 0 -8px 0px rgba(17, 17, 17, 0.4), 0 -20px 30px rgba(0, 0, 0, 0.2);
     transform: translateY(100%);
     opacity: 0;
     pointer-events: none;
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
     display: flex !important;
-    background-color: #FDF6E9;
+    background-color: var(--app-subtle);
   }
 
   .sidebar-panel.sheet-open {
@@ -203,4 +412,36 @@ body,
     display: flex !important;
   }
 }
+
+/* ================= THEME SCALING & SHADOW STYLES ================= */
+/* Font Size Scaling */
+html.font-scale-medium {
+  font-size: 108%;
+}
+
+html.font-scale-large {
+  font-size: 116%;
+}
+
+/* Soft Shadow Override */
+html.shadow-style-soft .brutal-card,
+html.shadow-style-soft .brutal-card-cream,
+html.shadow-style-soft .brutal-card-lg,
+html.shadow-style-soft .brutal-btn,
+html.shadow-style-soft .brutal-btn-yellow,
+html.shadow-style-soft .brutal-btn-blue {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+  border-radius: 6px;
+}
+
+/* Flat Minimalist Override */
+html.shadow-style-flat .brutal-card,
+html.shadow-style-flat .brutal-card-cream,
+html.shadow-style-flat .brutal-card-lg,
+html.shadow-style-flat .brutal-btn,
+html.shadow-style-flat .brutal-btn-yellow,
+html.shadow-style-flat .brutal-btn-blue {
+  box-shadow: none !important;
+}
+
 

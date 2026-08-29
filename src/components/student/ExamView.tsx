@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppUser, ExamItem, StudentAnswers } from '../../types';
 import { 
   Clock, Minimize2, Maximize2, User, Flag, Check, Edit3, X, 
-  AlertTriangle, Send, FileText, AlertCircle, Eye, Bookmark
+  AlertTriangle, Send, FileText, AlertCircle, Eye, Bookmark, Settings, Palette
 } from 'lucide-react';
 import { PdfViewer } from '../common/PdfViewer';
+import { useTheme } from '../../context/ThemeContext';
+import { ThemeSettingsModal } from '../common/ThemeSettingsModal';
 
 interface ExamViewProps {
   user: AppUser;
@@ -13,6 +15,9 @@ interface ExamViewProps {
 }
 
 export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) => {
+  const { playClickSound, theme } = useTheme();
+  const [showThemeModal, setShowThemeModal] = useState(false);
+
   const cfg = exam.questions || {};
   const numP1 = cfg.num_p1 || 0;
   const numP2 = cfg.num_p2 || 0;
@@ -22,8 +27,9 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
   const p2Questions = Array.from({ length: numP2 }, (_, i) => i + 1);
   const p3Questions = Array.from({ length: numP3 }, (_, i) => i + 1);
 
-  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(theme.focusModeByDefault);
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(window.innerWidth > 768);
+
 
   // Draggable Floating Button on Mobile
   const [btnPos, setBtnPos] = useState({ x: window.innerWidth - 175, y: window.innerHeight - 85 });
@@ -174,8 +180,18 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
           </p>
         </div>
 
-        {/* Student Info & Mobile Sheet Toggle */}
+        {/* Student Info & Mobile Sheet Toggle & Appearance Modal */}
         <div className="flex items-center gap-2">
+          {/* Theme Settings Button in Exam View */}
+          <button
+            type="button"
+            onClick={() => setShowThemeModal(true)}
+            className="p-1.5 sm:p-2 bg-white hover:bg-[#FFC93C] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all"
+            title="Tùy chỉnh giao diện (Màu sắc, cỡ chữ, âm thanh)"
+          >
+            <Palette className="w-4 h-4" />
+          </button>
+
           {/* Quick toggle button on mobile header */}
           <button
             onClick={() => setIsMobileSheetOpen(!isMobileSheetOpen)}
@@ -322,7 +338,10 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
                               <button
                                 key={ans}
                                 type="button"
-                                onClick={() => setAnsPart1({ ...ansPart1, [qNum]: ans })}
+                                onClick={() => {
+                                  setAnsPart1({ ...ansPart1, [qNum]: ans });
+                                  playClickSound();
+                                }}
                                 className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center font-black text-xs border-2 border-[#111111] transition-all ${
                                   isSelected
                                     ? 'bg-[#4D6BFE] text-white shadow-[1px_1px_0px_#111111] translate-x-[1px] translate-y-[1px]'
@@ -388,7 +407,10 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
                                 <div className="flex gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => setAnsPart2({ ...ansPart2, [qNum]: { ...ansPart2[qNum], [sub]: 'Đ' } })}
+                                    onClick={() => {
+                                      setAnsPart2({ ...ansPart2, [qNum]: { ...ansPart2[qNum], [sub]: 'Đ' } });
+                                      playClickSound();
+                                    }}
                                     className={`w-7 h-6 sm:w-8 sm:h-7 flex items-center justify-center font-black text-xs border-2 border-[#111111] transition-all ${
                                       currentVal === 'Đ' 
                                         ? 'bg-[#0F9D58] text-white shadow-[1px_1px_0px_#111111] translate-x-[1px] translate-y-[1px]' 
@@ -399,7 +421,10 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => setAnsPart2({ ...ansPart2, [qNum]: { ...ansPart2[qNum], [sub]: 'S' } })}
+                                    onClick={() => {
+                                      setAnsPart2({ ...ansPart2, [qNum]: { ...ansPart2[qNum], [sub]: 'S' } });
+                                      playClickSound();
+                                    }}
                                     className={`w-7 h-6 sm:w-8 sm:h-7 flex items-center justify-center font-black text-xs border-2 border-[#111111] transition-all ${
                                       currentVal === 'S' 
                                         ? 'bg-[#E63946] text-white shadow-[1px_1px_0px_#111111] translate-x-[1px] translate-y-[1px]' 
@@ -481,6 +506,12 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
           </div>
         </aside>
       </div>
+
+      {/* Theme & Appearance Customization Modal */}
+      <ThemeSettingsModal
+        isOpen={showThemeModal}
+        onClose={() => setShowThemeModal(false)}
+      />
     </div>
   );
 };
