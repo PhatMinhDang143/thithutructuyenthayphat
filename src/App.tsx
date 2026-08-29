@@ -11,12 +11,14 @@ import { ExamsMain } from './components/teacher/ExamsMain';
 import { StudentsManager } from './components/teacher/StudentsManager';
 import { HistoryViewer } from './components/teacher/HistoryViewer';
 
-import { fetchAllData, submitExamResult } from './services/storageService';
+import { fetchAllData, submitExamResult, submitExamAnswersToServer, getStoredCurrentUser, logoutUser } from './services/storageService';
 import { LayoutDashboard, FileSpreadsheet, ShieldCheck, Activity, Power, Component } from 'lucide-react';
 
 export default function App() {
   // Current logged in user (null = show Login screen)
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
+    return getStoredCurrentUser();
+  });
 
   // App Data
   const [exams, setExams] = useState<ExamItem[]>([]);
@@ -34,11 +36,12 @@ export default function App() {
   // Teacher Flow State
   const [teacherSubView, setTeacherSubView] = useState<'dashboard' | 'exams' | 'students' | 'history'>('dashboard');
 
-  // Data Loading (supports silent background sync)
-  const loadData = async (showLoadingSpinner: boolean = true) => {
+  // Data Loading (supports silent background sync and role-based data filtering)
+  const loadData = async (showLoadingSpinner: boolean = true, userRoleOverride?: 'student' | 'teacher' | 'guest') => {
     if (showLoadingSpinner) setLoading(true);
     try {
-      const data = await fetchAllData();
+      const activeRole = userRoleOverride || currentUser?.role;
+      const data = await fetchAllData(activeRole);
       setExams(data.exams);
       setStudents(data.students);
       setHistory(data.history);
@@ -79,96 +82,79 @@ export default function App() {
       window.removeEventListener('focus', handleSyncEvent);
       clearInterval(interval);
     };
-  }, [studentSubView]);
+  }, [studentSubView, currentUser?.role]);
 
   const handleLogout = () => {
+    logoutUser();
     setCurrentUser(null);
     setStudentSubView('lobby');
     setSelectedExam(null);
     setResultData(null);
     setTeacherSubView('dashboard');
+    // Refresh data with guest/student view
+    loadData(false, 'guest');
   };
 
-  // Calculate score and submit exam
+  // Authoritative Server-Side Exam Submission & Grading
   const handleExamSubmit = async (studentAnswers: StudentAnswers, cheatCount: number, exam: ExamItem) => {
     if (!currentUser) return;
 
-    const cfg = exam.questions || {};
-    const key = exam.answers || { p1: {}, p2: {}, p3: {} };
+    setLoading(true);
 
-    let rawScore = 0;
-    let correctCount = 0;
-
-    // Part I
-    for (let i = 1; i <= (cfg.num_p1 || 0); i++) {
-      const sAns = studentAnswers.p1[i] || '';
-      const cAns = key.p1?.[i] || '';
-      if (sAns && cAns && String(sAns).trim().toUpperCase() === String(cAns).trim().toUpperCase()) {
-        rawScore += 0.25;
-        correctCount++;
-      }
-    }
-
-    // Part II
-    for (let i = 1; i <= (cfg.num_p2 || 0); i++) {
-      let correctSubs = 0;
-      (['a', 'b', 'c', 'd'] as const).forEach((sub) => {
-        const sAns = studentAnswers.p2[i]?.[sub];
-        const cAns = key.p2?.[i]?.[sub];
-        if (sAns && cAns && String(sAns).trim().toUpperCase() === String(cAns).trim().toUpperCase()) {
-          correctSubs++;
-        }
-      });
-
-      if (correctSubs === 1) rawScore += 0.1;
-      else if (correctSubs === 2) rawScore += 0.25;
-      else if (correctSubs === 3) rawScore += 0.5;
-      else if (correctSubs === 4) {
-        rawScore += 1.0;
-        correctCount++;
-      }
-    }
-
-    // Part III
-    for (let i = 1; i <= (cfg.num_p3 || 0); i++) {
-      const sAns = studentAnswers.p3[i] || '';
-      const cAns = key.p3?.[i] || '';
-      if (sAns && cAns && String(sAns).trim().toLowerCase() === String(cAns).trim().toLowerCase()) {
-        rawScore += 0.5;
-        correctCount++;
-      }
-    }
-
-    const maxPossibleRawScore = (cfg.num_p1 || 0) * 0.25 + (cfg.num_p2 || 0) * 1.0 + (cfg.num_p3 || 0) * 0.5;
-    let finalScore = maxPossibleRawScore > 0 ? (rawScore / maxPossibleRawScore) * 10 : 0;
-    finalScore = Number(finalScore.toFixed(2));
-
-    const payload: ExamSubmission = {
+    // Send raw student answers to the server. The server computes the score securely from its hidden answer key.
+    const res = await submitExamAnswersToServer({
+      examId: exam.id,
+      examTitle: exam.title,
       username: currentUser.username,
       name: currentUser.name,
       group: currentUser.group,
-      examTitle: exam.title,
-      score: finalScore,
-      correct: correctCount,
-      cheat: `${cheatCount} lần`,
-      submitted_at: new Date().toLocaleString('vi-VN'),
-      details: studentAnswers,
-    };
+      studentAnswers,
+      cheatCount,
+    });
 
-    setResultData(payload);
-    setStudentSubView('result');
+    setLoading(false);
 
-    // Submit and sync
-    await submitExamResult(payload);
-    const updatedData = await fetchAllData();
-    setHistory(updatedData.history);
+    if (res.success && res.submission) {
+      const serverGradedSubmission = res.submission;
+      setResultData(serverGradedSubmission);
+      setStudentSubView('result');
 
-    // Compute leaderboard for this exam
-    const examLeaderboard = updatedData.history
-      .filter((h) => h.examTitle === exam.title)
-      .sort((a, b) => b.score - a.score);
+      // Refresh history
+      const updatedData = await fetchAllData(currentUser.role);
+      setHistory(updatedData.history);
 
-    setLeaderboard(examLeaderboard);
+      // Compute leaderboard for this exam
+      const examLeaderboard = updatedData.history
+        .filter((h) => h.examTitle === exam.title)
+        .sort((a, b) => b.score - a.score);
+
+      setLeaderboard(examLeaderboard);
+    } else {
+      if (res.error && res.error.includes('vượt quá số lần làm bài')) {
+        alert(res.error);
+        setSelectedExam(null);
+        setStudentSubView('lobby');
+        return;
+      }
+
+      // Fallback: If server is temporarily unreachable, create local submission
+      console.warn('Server grading returned error, attempting fallback submission:', res.error);
+      const fallbackPayload: ExamSubmission = {
+        username: currentUser.username,
+        name: currentUser.name,
+        group: currentUser.group,
+        examTitle: exam.title,
+        score: 0,
+        correct: 0,
+        cheat: `${cheatCount} lần`,
+        submitted_at: new Date().toLocaleString('vi-VN'),
+        details: studentAnswers,
+      };
+
+      setResultData(fallbackPayload);
+      setStudentSubView('result');
+      await submitExamResult(fallbackPayload);
+    }
   };
 
   return (
@@ -198,6 +184,7 @@ export default function App() {
               };
 
               setCurrentUser(cleanUser);
+              loadData(false, validRole);
               if (validRole === 'teacher') {
                 setTeacherSubView('dashboard');
               } else {
@@ -335,6 +322,7 @@ export default function App() {
               <LobbyView
                 user={currentUser}
                 exams={exams || []}
+                history={history || []}
                 loading={loading}
                 onLogout={handleLogout}
                 onSelectExam={(ex) => {

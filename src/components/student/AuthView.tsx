@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { User, KeyRound, Loader2, Users, GraduationCap, ArrowRight, Sparkles, LogIn } from 'lucide-react';
+import { User, KeyRound, Loader2, Users, GraduationCap, ArrowRight, LogIn } from 'lucide-react';
 import { AppUser, StudentAccount } from '../../types';
+import { loginUser } from '../../services/storageService';
 
 interface AuthViewProps {
   studentsMap: { [username: string]: StudentAccount };
@@ -9,7 +10,6 @@ interface AuthViewProps {
 }
 
 export const AuthView: React.FC<AuthViewProps> = ({
-  studentsMap,
   onLoginSuccess,
   onEnterAsGuest,
 }) => {
@@ -18,77 +18,26 @@ export const AuthView: React.FC<AuthViewProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setErrorMsg('');
 
-    setTimeout(() => {
-      const cleanUsername = username.trim();
-      const cleanPassword = password.trim();
+    const cleanUsername = username.trim();
+    const cleanPassword = password.trim();
 
-      // 1. Check if Teacher / Admin Login
-      const isTeacherUser = ['minhphat', 'admin', 'giaovien', 'teacher'].includes(cleanUsername.toLowerCase());
-      const isTeacherPass = ['12345', 'admin', '123'].includes(cleanPassword);
-
-      if (isTeacherUser && isTeacherPass) {
-        onLoginSuccess({
-          username: cleanUsername,
-          name: 'Đặng Minh Phát',
-          group: 'Giáo Viên Quản Trị',
-          role: 'teacher',
-        });
-        setIsLoading(false);
-        return;
+    try {
+      const res = await loginUser(cleanUsername, cleanPassword);
+      if (res.success && res.user) {
+        onLoginSuccess(res.user);
+      } else {
+        setErrorMsg(res.error || 'Tài khoản hoặc mật khẩu không chính xác. Vui lòng kiểm tra lại!');
       }
-
-      // 2. Check Student Login (support map, array, case-insensitive, field aliases)
-      let foundStudent: StudentAccount | null = null;
-      const lowerUsername = cleanUsername.toLowerCase();
-
-      if (studentsMap && typeof studentsMap === 'object') {
-        // Direct key check (case-sensitive or lowercase)
-        if (studentsMap[cleanUsername]) {
-          foundStudent = studentsMap[cleanUsername];
-        } else if (studentsMap[lowerUsername]) {
-          foundStudent = studentsMap[lowerUsername];
-        } else {
-          // Iterate values
-          const list = Array.isArray(studentsMap) ? studentsMap : Object.values(studentsMap);
-          for (const s of list) {
-            if (!s) continue;
-            const u = String(s.username || (s as any).sbd || (s as any).ma_hs || (s as any).id || '').trim().toLowerCase();
-            if (u === lowerUsername) {
-              foundStudent = {
-                username: s.username || (s as any).sbd || cleanUsername,
-                name: s.name || (s as any).ten || (s as any).ho_ten || cleanUsername,
-                password: s.password !== undefined ? String(s.password) : (s as any).matkhau !== undefined ? String((s as any).matkhau) : '',
-                group: s.group || (s as any).lop || (s as any).className || 'Chưa phân lớp',
-              };
-              break;
-            }
-          }
-        }
-      }
-
-      if (foundStudent) {
-        const studentPassword = String(foundStudent.password !== undefined ? foundStudent.password : '').trim();
-        // Allow login if student has no password or password matches
-        if (!studentPassword || studentPassword === cleanPassword || (!cleanPassword && studentPassword === '123')) {
-          onLoginSuccess({
-            username: foundStudent.username || cleanUsername,
-            name: foundStudent.name || cleanUsername,
-            group: foundStudent.group || 'Chưa phân lớp',
-            role: 'student',
-          });
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      setErrorMsg('Tài khoản hoặc mật khẩu không chính xác. Vui lòng kiểm tra lại!');
+    } catch (err: any) {
+      setErrorMsg('Không thể kết nối đến máy chủ xác thực. Vui lòng thử lại!');
+    } finally {
       setIsLoading(false);
-    }, 400);
+    }
   };
 
   return (

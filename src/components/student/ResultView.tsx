@@ -19,6 +19,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
   onBackToLobby,
 }) => {
   const cfg = exam.questions || {};
+  const answerKey = resultData.correctAnswers || exam.answers || { p1: {}, p2: {}, p3: {} };
   const p1Questions = Array.from({ length: cfg.num_p1 || 0 }, (_, i) => i + 1);
   const p2Questions = Array.from({ length: cfg.num_p2 || 0 }, (_, i) => i + 1);
   const p3Questions = Array.from({ length: cfg.num_p3 || 0 }, (_, i) => i + 1);
@@ -90,7 +91,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                     {p1Questions.map((qNum) => {
                       const sAns = resultData.details?.p1?.[qNum] || '_';
-                      const cAns = exam.answers?.p1?.[qNum] || '_';
+                      const cAns = answerKey.p1?.[qNum] || '_';
                       const isCorrect = String(sAns).toUpperCase() === String(cAns).toUpperCase();
 
                       return (
@@ -136,7 +137,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
                         <div className="grid grid-cols-2 gap-2 text-xs">
                           {(['a', 'b', 'c', 'd'] as const).map((sub) => {
                             const sAns = resultData.details?.p2?.[qNum]?.[sub] || '_';
-                            const cAns = exam.answers?.p2?.[qNum]?.[sub] || '_';
+                            const cAns = answerKey.p2?.[qNum]?.[sub] || '_';
                             const isCorrect = String(sAns).toUpperCase() === String(cAns).toUpperCase();
 
                             return (
@@ -171,7 +172,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
                   <div className="space-y-2">
                     {p3Questions.map((qNum) => {
                       const sAns = resultData.details?.p3?.[qNum] || '';
-                      const cAns = exam.answers?.p3?.[qNum] || '';
+                      const cAns = answerKey.p3?.[qNum] || '';
                       const isCorrect = String(sAns).trim().toLowerCase() === String(cAns).trim().toLowerCase();
 
                       return (

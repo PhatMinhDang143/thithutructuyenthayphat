@@ -1,10 +1,11 @@
 import React from 'react';
-import { AppUser, ExamItem, ExamQuestionsConfig } from '../../types';
-import { LogOut, FileText, Clock, Calendar, Sparkles, Filter, AlertCircle, Users, CheckCircle2, Lock, ArrowRight } from 'lucide-react';
+import { AppUser, ExamItem, ExamQuestionsConfig, ExamSubmission } from '../../types';
+import { LogOut, FileText, Clock, Calendar, Sparkles, Filter, AlertCircle, Users, CheckCircle2, Lock, ArrowRight, RotateCcw } from 'lucide-react';
 
 interface LobbyViewProps {
   user: AppUser;
   exams: ExamItem[];
+  history?: ExamSubmission[];
   loading: boolean;
   onLogout: () => void;
   onSelectExam: (exam: ExamItem) => void;
@@ -13,6 +14,7 @@ interface LobbyViewProps {
 export const LobbyView: React.FC<LobbyViewProps> = ({
   user,
   exams,
+  history = [],
   loading,
   onLogout,
   onSelectExam,
@@ -90,11 +92,24 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               const open = isExamOpen(cfg);
               const targetClassText = cfg.target_group || 'Tất cả';
 
+              // Calculate user's attempts on this exam
+              const userIdentifier = String(user.username || user.name || '').trim().toLowerCase();
+              const userAttempts = (history || []).filter((h) => {
+                const hUser = String(h.username || h.name || '').trim().toLowerCase();
+                const hExam = (h.examTitle || '').trim().toLowerCase();
+                return hUser === userIdentifier && hExam === (exam.title || '').trim().toLowerCase();
+              });
+
+              const attemptCount = userAttempts.length;
+              const maxAttempts = Number(cfg.max_attempts) || 0;
+              const isLimitExceeded = maxAttempts > 0 && attemptCount >= maxAttempts;
+              const remainingAttempts = maxAttempts > 0 ? Math.max(0, maxAttempts - attemptCount) : null;
+
               return (
                 <div
                   key={exam.id}
                   className={`bg-white border-3 border-[#111111] p-5 flex flex-col justify-between transition-all duration-150 shadow-[5px_5px_0px_#111111] hover:shadow-[7px_7px_0px_#111111] hover:-translate-x-0.5 hover:-translate-y-0.5 relative ${
-                    !open ? 'opacity-85 bg-neutral-100' : ''
+                    !open || isLimitExceeded ? 'opacity-90 bg-neutral-100' : ''
                   }`}
                 >
                   <div>
@@ -124,6 +139,24 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                         <strong className="text-[#111111]">{exam.duration} phút</strong>
                       </div>
 
+                      {/* Attempts info */}
+                      <div className="flex items-center justify-between pt-1.5 border-t border-[#111111]">
+                        <span className="flex items-center gap-1.5 text-neutral-700">
+                          <RotateCcw className="w-3.5 h-3.5 text-[#4D6BFE]" /> Lượt thi:
+                        </span>
+                        {maxAttempts > 0 ? (
+                          <span className={`font-black text-[11px] px-1.5 py-0.5 border border-[#111111] ${
+                            isLimitExceeded ? 'bg-[#E63946] text-white' : 'bg-[#FFC93C] text-[#111111]'
+                          }`}>
+                            {attemptCount}/{maxAttempts} lần {isLimitExceeded ? '(Hết lượt)' : `(Còn ${remainingAttempts})`}
+                          </span>
+                        ) : (
+                          <span className="text-[#0F9D58] font-black">
+                            {attemptCount > 0 ? `Đã làm ${attemptCount} lần (Tự do)` : 'Không giới hạn'}
+                          </span>
+                        )}
+                      </div>
+
                       {cfg.start_time && (
                         <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-[#111111]">
                           <span className="flex items-center gap-1.5 text-neutral-700">
@@ -147,19 +180,27 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   {/* Action Button */}
                   <button
                     onClick={() => {
-                      if (open) {
-                        onSelectExam(exam);
-                      } else {
+                      if (!open) {
                         alert('Đề thi chưa tới giờ mở hoặc đã kết thúc thời gian làm bài!');
+                        return;
                       }
+                      if (isLimitExceeded) {
+                        alert(`Bạn đã hoàn thành đủ ${maxAttempts} lượt làm bài cho phép của đề thi này. Hãy liên hệ giáo viên nếu cần mở lại bài thi!`);
+                        return;
+                      }
+                      onSelectExam(exam);
                     }}
                     className={`w-full py-3.5 font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 border-3 border-[#111111] transition-all ${
-                      open
+                      open && !isLimitExceeded
                         ? 'bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] shadow-[4px_4px_0px_#111111] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[1px_1px_0px_#111111]'
                         : 'bg-neutral-200 text-neutral-500 cursor-not-allowed shadow-[2px_2px_0px_#111111]'
                     }`}
                   >
-                    {open ? (
+                    {isLimitExceeded ? (
+                      <>
+                        <Lock className="w-4 h-4 text-[#E63946]" /> Đã Hết Lượt Thi ({attemptCount}/{maxAttempts})
+                      </>
+                    ) : open ? (
                       <>
                         <CheckCircle2 className="w-4 h-4" /> Vào Làm Bài Ngay
                       </>

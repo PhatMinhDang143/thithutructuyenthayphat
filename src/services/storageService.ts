@@ -22,6 +22,81 @@ export const STORAGE_KEYS = {
   HISTORY: 'app_history_data',
   CLASSES: 'app_classes_data',
   LAST_SYNC: 'app_last_sync_timestamp',
+  AUTH_TOKEN: 'app_auth_jwt_token',
+  CURRENT_USER: 'app_current_user',
+};
+
+// ================= AUTHENTICATION SERVICES =================
+export const getAuthToken = (): string | null => {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+  } catch (e) {
+    return null;
+  }
+};
+
+export const getStoredCurrentUser = (): any => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
+export const loginUser = async (
+  username: string,
+  password?: string
+): Promise<{ success: boolean; user?: any; token?: string; error?: string }> => {
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+
+    const data = await res.json();
+    if (res.ok && data.success && data.user) {
+      if (data.token) {
+        safeSetItem(STORAGE_KEYS.AUTH_TOKEN, data.token);
+      }
+      safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(data.user));
+      return {
+        success: true,
+        user: data.user,
+        token: data.token,
+      };
+    } else {
+      return {
+        success: false,
+        error: data.error || 'Tài khoản hoặc mật khẩu không chính xác!',
+      };
+    }
+  } catch (err: any) {
+    console.error('Login network error:', err);
+    return {
+      success: false,
+      error: 'Không thể kết nối đến máy chủ xác thực. Vui lòng thử lại!',
+    };
+  }
+};
+
+export const logoutUser = () => {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+    localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+  } catch (e) {}
+};
+
+export const getAuthHeaders = (): Record<string, string> => {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
 };
 
 // Safe localStorage setter with QuotaExceededError handling & draft garbage collection
@@ -161,7 +236,9 @@ export const uploadPdfToGoogleDrive = async (
 // 1. Fetches from /api/all (Instant Server-side Central Database shared across all browsers)
 // 2. Fetches from Google Apps Script (Long-term Cloud Sheet backup)
 // 3. Merges with local storage, ensuring newer remote edits (like deadline / config updates) always take precedence!
-export const fetchAllData = async (): Promise<{
+export const fetchAllData = async (
+  userRole?: 'student' | 'teacher' | 'guest'
+): Promise<{
   exams: ExamItem[];
   students: { [username: string]: StudentAccount };
   history: ExamSubmission[];
@@ -181,9 +258,17 @@ export const fetchAllData = async (): Promise<{
   let serverClasses: string[] = [];
   let serverFetched = false;
 
-  // Tier 1: Fetch from internal server /api/all
+  // Tier 1: Fetch from internal server /api/all with user role and authorization token
   try {
-    const sRes = await fetch('/api/all', { cache: 'no-cache' });
+    const roleParam = userRole ? `?role=${encodeURIComponent(userRole)}` : '';
+    const headers = getAuthHeaders();
+    if (userRole === 'teacher') {
+      headers['x-user-role'] = 'teacher';
+    }
+    const sRes = await fetch(`/api/all${roleParam}`, {
+      cache: 'no-cache',
+      headers,
+    });
     if (sRes.ok) {
       const sJson = await sRes.json();
       if (sJson && sJson.success && sJson.data) {
@@ -323,10 +408,19 @@ export const fetchAllData = async (): Promise<{
 
   const finalExams = Array.from(combinedMap.values());
   const finalExamsList = finalExams.length > 0 ? finalExams : INITIAL_EXAMS;
-  safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(finalExamsList));
+
+  // Protect student client storage: Strip answers if current session is student or guest
+  const storageExamsList = userRole === 'teacher'
+    ? finalExamsList
+    : finalExamsList.map((e) => {
+        const { answers, ...safe } = e;
+        return safe as ExamItem;
+      });
+
+  safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(storageExamsList));
 
   // If server had 0 exams but local/gas had exams, bootstrap the server store
-  if (serverFetched && serverExams.length === 0 && finalExamsList.length > 0) {
+  if (serverFetched && serverExams.length === 0 && finalExamsList.length > 0 && userRole === 'teacher') {
     fetch('/api/sync/bootstrap', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -390,7 +484,7 @@ export const fetchAllData = async (): Promise<{
   safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(classesList));
 
   return {
-    exams: finalExamsList,
+    exams: storageExamsList,
     students: mergedStudents,
     history: mergedHistory,
     classes: classesList,
@@ -438,12 +532,12 @@ export const saveExamData = async (
 
   safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(localExams));
 
-  // 2. Synchronize to Server Backend (Instant Cross-Browser Sync)
+  // 2. Synchronize to Server Backend (Instant Cross-Browser Sync with Auth)
   let serverSynced = false;
   try {
     const sRes = await fetch('/api/exams/save', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(examPayload),
     });
     if (sRes.ok) {
@@ -509,11 +603,11 @@ export const deleteExamData = async (
   const updated = localExams.filter((e) => e.id !== examId);
   safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(updated));
 
-  // Server API
+  // Server API (Authenticated)
   try {
     await fetch('/api/exams/delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ id: examId }),
     });
   } catch (e) {}
@@ -548,7 +642,7 @@ export const saveStudentsData = async (
   try {
     const sRes = await fetch('/api/students/save', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ students: studentsObj }),
     });
     if (sRes.ok) serverSynced = true;
@@ -578,8 +672,73 @@ export const saveStudentsData = async (
   };
 };
 
+// ================= AUTHORITATIVE SERVER-SIDE EXAM SUBMISSION =================
+export const submitExamAnswersToServer = async (payload: {
+  examId: string;
+  examTitle: string;
+  username: string;
+  name: string;
+  group: string;
+  studentAnswers: any;
+  cheatCount: number;
+}): Promise<{ success: boolean; submission?: ExamSubmission; error?: string }> => {
+  initLocalStorageIfEmpty();
+
+  try {
+    const res = await fetch('/api/exams/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      return {
+        success: false,
+        error: data?.error || `Máy chủ phản hồi mã lỗi HTTP ${res.status}`,
+      };
+    }
+
+    if (data && data.success && data.submission) {
+      const gradedSubmission: ExamSubmission = data.submission;
+
+      // Update client local history
+      let localHistory: ExamSubmission[] = [];
+      try {
+        localHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
+      } catch (e) {
+        localHistory = [];
+      }
+      localHistory.unshift(gradedSubmission);
+      safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(localHistory));
+
+      // Asynchronously forward to Google Apps Script backup if configured
+      const apiUrl = getApiUrl();
+      if (apiUrl) {
+        fetch(`${apiUrl}?action=submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(gradedSubmission),
+        }).catch((gasErr) => console.warn('GAS backup sync failed:', gasErr));
+      }
+
+      try {
+        window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history' } }));
+      } catch (e) {}
+
+      return { success: true, submission: gradedSubmission };
+    } else {
+      return { success: false, error: data?.error || 'Máy chủ không thể hoàn tất chấm điểm' };
+    }
+  } catch (err: any) {
+    console.error('Server-side grading submission error:', err);
+    return { success: false, error: err?.message || 'Không thể kết nối đến máy chủ chấm điểm' };
+  }
+};
+
 // ================= SUBMIT EXAM RESULT =================
-export const submitExamResult = async (payload: ExamSubmission): Promise<{ success: boolean }> => {
+export const submitExamResult = async (payload: ExamSubmission): Promise<{ success: boolean; submission?: ExamSubmission }> => {
   initLocalStorageIfEmpty();
   let localHistory: ExamSubmission[] = [];
   try {
@@ -621,7 +780,7 @@ export const submitExamResult = async (payload: ExamSubmission): Promise<{ succe
     window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history' } }));
   } catch (e) {}
 
-  return { success: true };
+  return { success: true, submission: payload };
 };
 
 // ================= CLEAR HISTORY =================
@@ -630,7 +789,10 @@ export const clearExamHistory = async (): Promise<{ success: boolean }> => {
   safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify([]));
 
   try {
-    await fetch('/api/history/clear', { method: 'POST' });
+    await fetch('/api/history/clear', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
   } catch (e) {}
 
   const apiUrl = getApiUrl();
@@ -649,6 +811,45 @@ export const clearExamHistory = async (): Promise<{ success: boolean }> => {
   } catch (e) {}
 
   return { success: true };
+};
+
+// ================= DELETE SPECIFIC HISTORY ENTRIES =================
+export const deleteHistoryEntries = async (ids: string[] | string): Promise<{ success: boolean; deletedCount?: number }> => {
+  initLocalStorageIfEmpty();
+  const targetIds = Array.isArray(ids) ? ids.map(String) : [String(ids)];
+  const idSet = new Set(targetIds);
+
+  // 1. Update local storage
+  let currentHistory: ExamSubmission[] = [];
+  try {
+    currentHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
+  } catch (e) {
+    currentHistory = [];
+  }
+  const updatedHistory = currentHistory.filter((h: any) => !idSet.has(String(h.id)));
+  safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(updatedHistory));
+
+  // 2. Call backend API
+  try {
+    const res = await fetch('/api/history/delete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ ids: targetIds }),
+    });
+    const data = await res.json();
+    try {
+      window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history_deleted', ids: targetIds } }));
+    } catch (e) {}
+    return { success: data.success ?? true, deletedCount: data.deletedCount };
+  } catch (e) {
+    try {
+      window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history_deleted', ids: targetIds } }));
+    } catch (ev) {}
+    return { success: true, deletedCount: targetIds.length };
+  }
 };
 
 // Full Google Apps Script Code.gs Template for Teachers

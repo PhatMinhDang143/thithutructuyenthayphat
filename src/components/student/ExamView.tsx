@@ -367,9 +367,14 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
                   <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider">
                     Phần II: Đúng / Sai ({p2Questions.length} câu)
                   </h4>
-                  <span className="text-[10px] font-black text-[#0F9D58] bg-[#FDF6E9] px-2 py-0.5 border border-[#111111]">
-                    Đúng (#0F9D58) / Sai (#E63946)
-                  </span>
+                  <div className="flex items-center gap-1.5 text-[10px] font-black">
+                    <span className="bg-[#0F9D58] text-white px-1.5 py-0.5 border border-[#111111] shadow-[1px_1px_0px_#111111]">
+                      Đ: Đúng
+                    </span>
+                    <span className="bg-[#E63946] text-white px-1.5 py-0.5 border border-[#111111] shadow-[1px_1px_0px_#111111]">
+                      S: Sai
+                    </span>
+                  </div>
                 </div>
 
                 <div className="space-y-3">

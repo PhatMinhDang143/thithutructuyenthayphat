@@ -35,6 +35,11 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   // TARGET CLASS SELECTION FEATURE (Lớp được phép làm bài)
   const [targetGroup, setTargetGroup] = useState(initialData?.questions?.target_group || 'Tất cả');
 
+  // MAX ATTEMPTS / RETRY LIMIT FEATURE (Số lần làm bài tối đa)
+  const [maxAttempts, setMaxAttempts] = useState<number>(
+    initialData?.questions?.max_attempts !== undefined ? Number(initialData.questions.max_attempts) : 0
+  );
+
   const [startTime, setStartTime] = useState(initialData?.questions?.start_time || '');
   const [endTime, setEndTime] = useState(initialData?.questions?.end_time || '');
 
@@ -293,6 +298,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
         num_p2: Number(numP2),
         num_p3: Number(numP3),
         target_group: targetGroup.trim() || 'Tất cả',
+        max_attempts: Number(maxAttempts) || 0,
         start_time: startTime,
         end_time: endTime,
         file_link: finalFileLink,
@@ -390,6 +396,62 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* MAX ATTEMPTS / RETAKE LIMIT SETTING */}
+            <div className="pt-3 border-t-2 border-[#111111]">
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[#111111] text-xs font-black uppercase flex items-center gap-1.5">
+                  <RotateCcw className="w-4 h-4 text-[#4D6BFE]" />
+                  Số Lần Làm Bài Tối Đa (Thi Lại)
+                </label>
+                <span className={`text-xs font-black px-2.5 py-0.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111] ${
+                  maxAttempts === 0 ? 'bg-[#0F9D58] text-white' : maxAttempts === 1 ? 'bg-[#E63946] text-white' : 'bg-[#FFC93C] text-[#111111]'
+                }`}>
+                  {maxAttempts === 0 ? 'Không Giới Hạn' : `Tối Đa ${maxAttempts} Lần`}
+                </span>
+              </div>
+
+              <input
+                type="number"
+                value={maxAttempts}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  setMaxAttempts(isNaN(val) || val < 0 ? 0 : val);
+                }}
+                min={0}
+                max={50}
+                className="w-full p-3 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[#111111] outline-none text-sm font-black mb-2"
+                placeholder="0 = Không giới hạn, 1 = Chỉ 1 lần duy nhất, 2, 3,..."
+              />
+
+              {/* Quick Attempts Preset Buttons */}
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {[
+                  { label: 'Không giới hạn (0)', val: 0 },
+                  { label: '1 lần (Duy nhất)', val: 1 },
+                  { label: '2 lần thi', val: 2 },
+                  { label: '3 lần thi', val: 3 },
+                  { label: '5 lần thi', val: 5 },
+                ].map((item) => (
+                  <button
+                    key={item.val}
+                    type="button"
+                    onClick={() => setMaxAttempts(item.val)}
+                    className={`px-2.5 py-1 text-[11px] font-black uppercase transition-all border-2 border-[#111111] ${
+                      maxAttempts === item.val
+                        ? 'bg-[#4D6BFE] text-white shadow-[2px_2px_0px_#111111]'
+                        : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              <p className="text-[11px] text-neutral-600 font-bold leading-tight">
+                * Nếu đặt là <strong>1 lần</strong>: Học sinh chỉ nộp bài 1 lần và không được thi lại (trừ khi giáo viên xóa bài làm cũ trong mục Nhật Ký).
+              </p>
             </div>
           </div>
 

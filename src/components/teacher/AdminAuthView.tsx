@@ -1,26 +1,36 @@
 import React, { useState } from 'react';
-import { Fingerprint, KeyRound, ShieldAlert, Sparkles, User } from 'lucide-react';
+import { Fingerprint, KeyRound, Loader2, User } from 'lucide-react';
+import { loginUser } from '../../services/storageService';
+import { AppUser } from '../../types';
 
 interface AdminAuthViewProps {
-  onLoginSuccess: () => void;
+  onLoginSuccess: (user?: AppUser) => void;
 }
 
 export const AdminAuthView: React.FC<AdminAuthViewProps> = ({ onLoginSuccess }) => {
   const [adminUser, setAdminUser] = useState('');
   const [adminPass, setAdminPass] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const encodedUser = btoa(adminUser.trim());
-    const encodedPass = btoa(adminPass.trim());
+    setIsLoading(true);
+    setErrorMsg('');
 
-    // Matches original encoded user/pass: Minhphat / 12345 (TWluaHBoYXQ= / MTIzNDU=)
-    if ((encodedUser === 'TWluaHBoYXQ=' && encodedPass === 'MTIzNDU=') ||
-        (adminUser.trim().toLowerCase() === 'admin' && adminPass.trim() === 'admin')) {
-      onLoginSuccess();
-    } else {
-      setErrorMsg('Sai Tên Đăng Nhập hoặc Mật Khẩu Quản Trị Viên!');
+    try {
+      const res = await loginUser(adminUser.trim(), adminPass.trim());
+      if (res.success && res.user && res.user.role === 'teacher') {
+        onLoginSuccess(res.user);
+      } else if (res.success && res.user && res.user.role !== 'teacher') {
+        setErrorMsg('Tài khoản không có quyền truy cập trang Quản Trị Giáo Viên!');
+      } else {
+        setErrorMsg(res.error || 'Sai Tên Đăng Nhập hoặc Mật Khẩu Quản Trị Viên!');
+      }
+    } catch (err: any) {
+      setErrorMsg('Không thể kết nối đến máy chủ xác thực.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -36,7 +46,7 @@ export const AdminAuthView: React.FC<AdminAuthViewProps> = ({ onLoginSuccess }) 
           </div>
           <h2 className="text-xl font-extrabold text-white tracking-widest uppercase">TRANG GIÁO VIÊN / QUẢN TRỊ</h2>
           <p className="text-xs text-indigo-400 font-bold uppercase tracking-wider mt-1">
-            Quản lý đề thi & phân quyền theo lớp
+            Xác thực máy chủ bảo mật & phân quyền JWT
           </p>
         </div>
 
@@ -83,14 +93,16 @@ export const AdminAuthView: React.FC<AdminAuthViewProps> = ({ onLoginSuccess }) 
 
           <button
             type="submit"
-            className="w-full bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white py-3.5 rounded-xl font-bold uppercase tracking-wider text-xs shadow-lg shadow-indigo-600/20 transition-all mt-4"
+            disabled={isLoading}
+            className="w-full bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white py-3.5 rounded-xl font-bold uppercase tracking-wider text-xs shadow-lg shadow-indigo-600/20 transition-all mt-4 disabled:opacity-60 flex items-center justify-center gap-2"
           >
-            Đăng Nhập Quản Trị
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {isLoading ? 'Đang xác thực bảo mật...' : 'Đăng Nhập Quản Trị'}
           </button>
         </form>
 
         <div className="mt-6 pt-4 border-t border-slate-800/80 text-center text-xs text-slate-500">
-          💡 Tài khoản mặc định: <code className="text-indigo-400 font-bold">Minhphat</code> / mật khẩu: <code className="text-indigo-400 font-bold">12345</code> (hoặc admin/admin)
+          💡 Tài khoản quản trị mặc định: <code className="text-indigo-400 font-bold">Minhphat</code> / mật khẩu: <code className="text-indigo-400 font-bold">12345</code> (hoặc admin/admin)
         </div>
       </div>
     </div>

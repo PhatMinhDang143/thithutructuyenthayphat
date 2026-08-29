@@ -15,6 +15,7 @@ export interface ExamQuestionsConfig {
   file_link?: string; // Google Drive PDF view/preview URL or uploaded base64 data
   explain_link?: string;
   target_group?: string; // Lớp/Nhóm được phép làm bài (e.g. "Tất cả", "12A1", "12A1, 12A2")
+  max_attempts?: number; // Số lần làm bài tối đa (0 hoặc undefined = không giới hạn, 1 = 1 lần, 2 = 2 lần,...)
 }
 
 export interface AnswerKeyPart1 {
@@ -45,7 +46,7 @@ export interface ExamItem {
   title: string;
   duration: number; // in minutes
   questions: ExamQuestionsConfig;
-  answers: AnswerKeys;
+  answers?: AnswerKeys; // Protected: Stripped on server for students, provided only for teachers or inside graded submissions
   updatedAt?: number; // epoch timestamp in ms
 }
 
@@ -66,6 +67,7 @@ export interface ExamSubmission {
   correct: number;
   cheat: string; // e.g. "0 lần" or "2 lần"
   details?: StudentAnswers;
+  correctAnswers?: AnswerKeys; // Authoritative answer key returned securely after server-side grading
 }
 
 export interface AppUser {
@@ -73,4 +75,12 @@ export interface AppUser {
   name: string;
   group: string; // Class / Group
   role: 'student' | 'guest' | 'teacher';
+  token?: string;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  user?: AppUser;
+  token?: string;
+  error?: string;
 }
