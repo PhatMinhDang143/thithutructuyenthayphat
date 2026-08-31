@@ -297,7 +297,11 @@ app.post('/api/auth/login', (req, res) => {
 
     if (foundStudent) {
       const expectedPass = String(foundStudent.password !== undefined ? foundStudent.password : '').trim();
-      const isPassCorrect = !expectedPass || expectedPass === cleanPass || (expectedPass === '123' && (!cleanPass || cleanPass === '123'));
+      const isPassCorrect =
+        !expectedPass ||
+        expectedPass === cleanPass ||
+        expectedPass.toLowerCase() === cleanPass.toLowerCase() ||
+        (expectedPass === '123' && (!cleanPass || cleanPass === '123'));
 
       if (isPassCorrect) {
         const studentObj = {

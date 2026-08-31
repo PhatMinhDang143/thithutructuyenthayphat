@@ -157,6 +157,7 @@ export const loginUser = async (
       const isPassOk =
         !expPass ||
         expPass === cleanPassword ||
+        expPass.toLowerCase() === cleanPassword.toLowerCase() ||
         (expPass === '123' && (!cleanPassword || cleanPassword === '123'));
 
       if (isPassOk) {
