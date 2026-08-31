@@ -392,6 +392,34 @@ export const fetchAllData = async (
   let gasStudents: { [username: string]: StudentAccount } = {};
   let gasHistory: ExamSubmission[] = [];
 
+  // Helper to normalize and auto-heal student object (prevent inverted Name vs Password)
+  const normalizeStudent = (raw: any, defaultKey?: string): StudentAccount | null => {
+    if (!raw) return null;
+    const u = String(raw.username || raw.sbd || raw.id || raw.ma_hs || defaultKey || '').trim();
+    if (!u) return null;
+
+    let n = String(raw.name || raw.ten || raw.ho_ten || raw.fullName || u).trim();
+    let p = String(raw.password !== undefined ? raw.password : raw.matkhau !== undefined ? raw.matkhau : '123').trim();
+    const g = String(raw.group || raw.lop || raw.className || raw.class || raw.nhom || 'Chưa phân lớp').trim();
+
+    // If password contains spaces/Vietnamese accents while name does NOT -> they were inverted!
+    const pHasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(p) || p.includes(' ');
+    const nNoVietnamese = !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(n) && !n.includes(' ');
+
+    if (pHasVietnamese && nNoVietnamese && n.length > 0) {
+      const temp = n;
+      n = p;
+      p = temp;
+    }
+
+    return {
+      username: u,
+      name: n,
+      password: p,
+      group: g,
+    };
+  };
+
   if (apiUrl) {
     try {
       const gRes = await fetch(`${apiUrl}?action=get_all`, { mode: 'cors', cache: 'no-cache' });
@@ -414,31 +442,13 @@ export const fetchAllData = async (
           const rawSt = data.students || {};
           if (Array.isArray(rawSt)) {
             rawSt.forEach((s: any) => {
-              if (s) {
-                const u = String(s.username || s.sbd || s.id || s.ma_hs || '').trim();
-                if (u) {
-                  gasStudents[u.toLowerCase()] = {
-                    username: u,
-                    name: String(s.name || s.ten || s.ho_ten || s.fullName || u).trim(),
-                    password: String(s.password !== undefined ? s.password : s.matkhau !== undefined ? s.matkhau : '123').trim(),
-                    group: String(s.group || s.lop || s.className || s.class || s.nhom || 'Chưa phân lớp').trim(),
-                  };
-                }
-              }
+              const norm = normalizeStudent(s);
+              if (norm) gasStudents[norm.username.toLowerCase()] = norm;
             });
           } else if (typeof rawSt === 'object') {
             Object.entries(rawSt).forEach(([k, s]: [string, any]) => {
-              if (s) {
-                const u = String(s.username || s.sbd || k || '').trim();
-                if (u) {
-                  gasStudents[u.toLowerCase()] = {
-                    username: u,
-                    name: String(s.name || s.ten || s.ho_ten || s.fullName || u).trim(),
-                    password: String(s.password !== undefined ? s.password : s.matkhau !== undefined ? s.matkhau : '123').trim(),
-                    group: String(s.group || s.lop || s.className || s.class || s.nhom || 'Chưa phân lớp').trim(),
-                  };
-                }
-              }
+              const norm = normalizeStudent(s, k);
+              if (norm) gasStudents[norm.username.toLowerCase()] = norm;
             });
           }
 
@@ -541,7 +551,14 @@ export const fetchAllData = async (
     localStudents = {};
   }
 
-  const mergedStudents = { ...localStudents, ...gasStudents, ...serverStudents };
+  const rawMerged = { ...localStudents, ...gasStudents, ...serverStudents };
+  const mergedStudents: { [username: string]: StudentAccount } = {};
+  Object.entries(rawMerged).forEach(([k, s]) => {
+    const norm = normalizeStudent(s, k);
+    if (norm && norm.username) {
+      mergedStudents[norm.username.toLowerCase()] = norm;
+    }
+  });
   safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(mergedStudents));
 
   // === SMART CONSOLIDATION OF HISTORY ===
@@ -1191,15 +1208,56 @@ function getStudentsData(ss) {
   var rows = sheet.getDataRange().getValues();
   if (rows.length <= 1) return {};
   
+  // Dynamically detect column headers
+  var headerRow = rows[0] || [];
+  var colUser = -1, colName = -1, colPass = -1, colGroup = -1;
+
+  for (var c = 0; c < headerRow.length; c++) {
+    var h = String(headerRow[c] || '').toLowerCase().trim();
+    if (colUser === -1 && (h.indexOf('sbd') > -1 || h.indexOf('user') > -1 || h.indexOf('tài khoản') > -1 || h.indexOf('tai khoan') > -1 || h.indexOf('mã') > -1 || h === 'id')) {
+      colUser = c;
+    } else if (colPass === -1 && (h.indexOf('pass') > -1 || h.indexOf('mật khẩu') > -1 || h.indexOf('mat khau') > -1 || h.indexOf('matkhau') > -1 || h.indexOf('mk') > -1)) {
+      colPass = c;
+    } else if (colName === -1 && (h.indexOf('tên') > -1 || h.indexOf('name') > -1 || h.indexOf('họ') > -1 || h.indexOf('sinh') > -1 || h.indexOf('fullname') > -1)) {
+      colName = c;
+    } else if (colGroup === -1 && (h.indexOf('lớp') > -1 || h.indexOf('lop') > -1 || h.indexOf('group') > -1 || h.indexOf('class') > -1 || h.indexOf('nhóm') > -1 || h.indexOf('nhom') > -1)) {
+      colGroup = c;
+    }
+  }
+
+  if (colUser === -1) colUser = 0;
+  if (colName === -1 && colPass === -1) {
+    colName = 1;
+    colPass = 2;
+  } else if (colName === -1) {
+    colName = (colPass === 1) ? 2 : 1;
+  } else if (colPass === -1) {
+    colPass = (colName === 1) ? 2 : 1;
+  }
+  if (colGroup === -1) colGroup = 3;
+
   var students = {};
   for (var i = 1; i < rows.length; i++) {
-    var u = String(rows[i][0] || '').trim();
+    var u = String(rows[i][colUser] || '').trim();
     if (u) {
+      var n = String(rows[i][colName] || u).trim();
+      var p = String(rows[i][colPass] !== undefined ? rows[i][colPass] : '123').trim();
+      var g = String(rows[i][colGroup] || 'Chưa phân lớp').trim();
+
+      // Auto-detect if name and password got inverted in sheet data
+      var pHasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(p) || p.indexOf(' ') > -1;
+      var nNoVietnamese = !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(n) && n.indexOf(' ') === -1;
+      if (pHasVietnamese && nNoVietnamese && n.length > 0) {
+        var tmp = n;
+        n = p;
+        p = tmp;
+      }
+
       students[u.toLowerCase()] = {
         username: u,
-        name: String(rows[i][1] || u),
-        password: String(rows[i][2] !== undefined ? rows[i][2] : '123'),
-        group: String(rows[i][3] || 'Chưa phân lớp')
+        name: n,
+        password: p,
+        group: g
       };
     }
   }

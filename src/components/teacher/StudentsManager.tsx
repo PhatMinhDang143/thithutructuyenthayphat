@@ -20,12 +20,29 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    const list = (Object.entries(students) as [string, StudentAccount][]).map(([username, data]) => ({
-      username: username || data.username,
-      password: data.password || '123',
-      name: data.name || '',
-      group: data.group || '12A1',
-    }));
+    const list = (Object.entries(students) as [string, StudentAccount][]).map(([username, data]) => {
+      let u = username || data.username || '';
+      let p = String(data.password !== undefined ? data.password : '123').trim();
+      let n = String(data.name || '').trim();
+      let g = String(data.group || '12A1').trim();
+
+      // Auto-detect if name and password got inverted
+      const pHasAccentsOrSpaces = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(p) || p.includes(' ');
+      const nHasNoAccentsOrSpaces = !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(n) && !n.includes(' ');
+
+      if (pHasAccentsOrSpaces && nHasNoAccentsOrSpaces && n.length > 0) {
+        const temp = n;
+        n = p;
+        p = temp;
+      }
+
+      return {
+        username: u,
+        password: p,
+        name: n || u,
+        group: g,
+      };
+    });
     setStudentList(list);
   }, [students]);
 
@@ -145,10 +162,10 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
         <table className="w-full text-left border-collapse border-2 border-[#111111]">
           <thead>
             <tr className="text-xs uppercase tracking-wider font-black text-[#111111] bg-[#FDF6E9] border-b-2 border-[#111111]">
-              <th className="p-3.5 w-44 border-r-2 border-[#111111]">Tài Khoản (SBD)</th>
-              <th className="p-3.5 w-36 border-r-2 border-[#111111]">Mật Khẩu</th>
+              <th className="p-3.5 w-40 border-r-2 border-[#111111]">Tài Khoản (SBD)</th>
               <th className="p-3.5 border-r-2 border-[#111111]">Họ Và Tên Học Sinh</th>
-              <th className="p-3.5 w-48 border-r-2 border-[#111111]">Phân Lớp Học Sinh</th>
+              <th className="p-3.5 w-36 border-r-2 border-[#111111]">Mật Khẩu</th>
+              <th className="p-3.5 w-44 border-r-2 border-[#111111]">Phân Lớp Học Sinh</th>
               <th className="p-3.5 w-16 text-center">Xóa</th>
             </tr>
           </thead>
@@ -165,16 +182,7 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
                       value={s.username}
                       onChange={(e) => handleUpdateRow(realIndex, 'username', e.target.value)}
                       className="w-full bg-white border-2 border-[#111111] p-2 font-black text-xs text-[#111111] outline-none focus:bg-[#FDF6E9]"
-                      placeholder="Mã định danh"
-                    />
-                  </td>
-                  <td className="p-2 border-r-2 border-neutral-200">
-                    <input
-                      type="text"
-                      value={s.password}
-                      onChange={(e) => handleUpdateRow(realIndex, 'password', e.target.value)}
-                      className="w-full bg-white border-2 border-[#111111] p-2 text-xs text-[#111111] font-mono font-bold outline-none focus:bg-[#FDF6E9]"
-                      placeholder="Mật khẩu"
+                      placeholder="Mã định danh (SBD)"
                     />
                   </td>
                   <td className="p-2 border-r-2 border-neutral-200">
@@ -183,7 +191,16 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
                       value={s.name}
                       onChange={(e) => handleUpdateRow(realIndex, 'name', e.target.value)}
                       className="w-full bg-white border-2 border-[#111111] p-2 font-black text-xs text-[#111111] outline-none focus:bg-[#FDF6E9]"
-                      placeholder="Họ tên đầy đủ"
+                      placeholder="Họ tên đầy đủ (VD: Nam Thiên)"
+                    />
+                  </td>
+                  <td className="p-2 border-r-2 border-neutral-200">
+                    <input
+                      type="text"
+                      value={s.password}
+                      onChange={(e) => handleUpdateRow(realIndex, 'password', e.target.value)}
+                      className="w-full bg-white border-2 border-[#111111] p-2 text-xs text-[#111111] font-mono font-bold outline-none focus:bg-[#FDF6E9]"
+                      placeholder="Mật khẩu (VD: namthien)"
                     />
                   </td>
                   <td className="p-2 border-r-2 border-neutral-200">
