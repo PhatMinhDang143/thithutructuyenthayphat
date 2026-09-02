@@ -1,7 +1,7 @@
 import { ExamItem, StudentAccount, ExamSubmission } from '../types';
 import { INITIAL_EXAMS, INITIAL_STUDENTS, INITIAL_HISTORY, INITIAL_CLASSES } from '../data/initialData';
 
-const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbyfElu762bowwlSMwB2opPi1YALh59HQk9gZ90E55n1en56mtb402oLT0590MBVN7ye/exec";
+const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycby3mDVDZAlmuPoP2fXwJNyQXL5kdmWgqhoEu0FPMhYf9lwj1eqNwSVSGkVzA5d2YKAP/exec";
 
 export const getApiUrl = (): string => {
   return localStorage.getItem('app_api_url') || DEFAULT_API_URL;
@@ -135,17 +135,34 @@ export const loginUser = async (
       return { success: true, user: teacherObj };
     }
 
+function normalizeAccents(str: string): string {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
     // Check student in local storage
     const localStudentsRaw = localStorage.getItem(STORAGE_KEYS.STUDENTS);
     const localStudents = localStudentsRaw ? JSON.parse(localStudentsRaw) : {};
     const lower = cleanUsername.toLowerCase();
+    const normInput = normalizeAccents(cleanUsername);
     let foundStudent: any = localStudents[cleanUsername] || localStudents[lower];
 
     if (!foundStudent) {
       for (const s of Object.values(localStudents) as any[]) {
         if (!s) continue;
         const u = String(s.username || s.sbd || s.ma_hs || s.id || '').trim().toLowerCase();
-        if (u === lower) {
+        const n = String(s.name || '').trim().toLowerCase();
+        if (u === lower || n === lower) {
+          foundStudent = s;
+          break;
+        }
+        if (normalizeAccents(u) === normInput || normalizeAccents(n) === normInput) {
           foundStudent = s;
           break;
         }
@@ -153,12 +170,13 @@ export const loginUser = async (
     }
 
     if (foundStudent) {
-      const expPass = String(foundStudent.password !== undefined ? foundStudent.password : '').trim();
+      const expPass = String(foundStudent.password !== undefined && foundStudent.password !== null ? foundStudent.password : '').trim();
       const isPassOk =
         !expPass ||
-        expPass === cleanPassword ||
-        expPass.toLowerCase() === cleanPassword.toLowerCase() ||
-        (expPass === '123' && (!cleanPassword || cleanPassword === '123'));
+        (cleanPassword !== '' &&
+          (expPass === cleanPassword ||
+            expPass.toLowerCase() === cleanPassword.toLowerCase() ||
+            normalizeAccents(expPass) === normalizeAccents(cleanPassword)));
 
       if (isPassOk) {
         const studentObj = {
@@ -170,9 +188,14 @@ export const loginUser = async (
         safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(studentObj));
         return { success: true, user: studentObj };
       } else {
-        return { success: false, error: 'Mật khẩu Học sinh không chính xác!' };
+        return { success: false, error: 'Mật khẩu không chính xác. Vui lòng kiểm tra lại!' };
       }
     }
+
+    return {
+      success: false,
+      error: 'Tài khoản không tồn tại trong danh sách học sinh. Vui lòng kiểm tra lại Tên đăng nhập / Số báo danh!',
+    };
   } catch (fallbackErr) {
     console.error('Local fallback login error:', fallbackErr);
   }
@@ -399,7 +422,7 @@ export const fetchAllData = async (
     if (!u) return null;
 
     let n = String(raw.name || raw.ten || raw.ho_ten || raw.fullName || u).trim();
-    let p = String(raw.password !== undefined ? raw.password : raw.matkhau !== undefined ? raw.matkhau : '123').trim();
+    let p = String(raw.password !== undefined ? raw.password : raw.matkhau !== undefined ? raw.matkhau : '').trim();
     const g = String(raw.group || raw.lop || raw.className || raw.class || raw.nhom || 'Chưa phân lớp').trim();
 
     // If password contains spaces/Vietnamese accents while name does NOT -> they were inverted!
@@ -1285,41 +1308,187 @@ function getHistoryData(ss) {
   var sheet = getHistorySheet(ss);
   var rows = sheet.getDataRange().getValues();
   if (rows.length <= 1) return [];
-  
-  var history = [];
-  for (var i = 1; i < rows.length; i++) {
-    if (rows[i][0]) {
-      history.push({
-        id: String(rows[i][0]),
-        submitted_at: String(rows[i][1] || ''),
-        username: String(rows[i][2] || ''),
-        name: String(rows[i][3] || ''),
-        group: String(rows[i][4] || ''),
-        examTitle: String(rows[i][5] || ''),
-        score: Number(rows[i][6] || 0),
-        correct: Number(rows[i][7] || 0),
-        cheat: String(rows[i][8] || '0 lần')
-      });
+
+  // Read exams to allow on-the-fly authoritative regrading if score was 0
+  var examsMap = {};
+  try {
+    var exData = getExamsData(ss);
+    for (var eIdx = 0; eIdx < exData.length; eIdx++) {
+      var ex = exData[eIdx];
+      if (ex && ex.title) examsMap[ex.title.trim()] = ex;
+      if (ex && ex.id) examsMap[ex.id.trim()] = ex;
     }
+  } catch(e) {}
+
+  var history = [];
+  var updatedRows = false;
+
+  for (var i = 1; i < rows.length; i++) {
+    var r = rows[i];
+    if (!r || r.length === 0 || !r[0]) continue;
+
+    var id = '';
+    var submitted_at = '';
+    var username = '';
+    var name = '';
+    var group = '';
+    var examTitle = '';
+    var score = 0;
+    var correct = 0;
+    var cheat = '0 lần';
+    var detailsObj = null;
+
+    // Scan every cell in the row to find JSON details, timestamps, cheat counts, and usernames
+    for (var c = 0; c < r.length; c++) {
+      var cellVal = r[c];
+      if (cellVal === undefined || cellVal === null) continue;
+      var strVal = String(cellVal).trim();
+
+      if (!detailsObj && strVal.charAt(0) === '{' && (strVal.indexOf('"p1"') > -1 || strVal.indexOf('"p2"') > -1 || strVal.indexOf('"p3"') > -1)) {
+        try {
+          detailsObj = JSON.parse(strVal);
+        } catch(err) {}
+      } else if (!submitted_at && (strVal.indexOf(':') > -1 && (strVal.indexOf('/') > -1 || strVal.indexOf('-') > -1))) {
+        submitted_at = strVal;
+      } else if (!cheat || cheat === '0 lần') {
+        if (strVal.indexOf('lần') > -1) {
+          cheat = strVal;
+        }
+      }
+    }
+
+    // Standard or legacy column alignment
+    if (r[0] && String(r[0]).indexOf('sub_') === 0) {
+      id = String(r[0]);
+      submitted_at = submitted_at || String(r[1] || '');
+      username = String(r[2] || '');
+      name = String(r[3] || '');
+      group = String(r[4] || '');
+      examTitle = String(r[5] || '');
+      score = Number(r[6] || 0);
+      correct = Number(r[7] || 0);
+      cheat = cheat || String(r[8] || '0 lần');
+    } else {
+      // Row starts with Timestamp
+      submitted_at = submitted_at || String(r[0] || '');
+      username = String(r[1] || '');
+      name = String(r[2] || '');
+      group = String(r[3] || '');
+      examTitle = String(r[4] || '');
+      score = Number(r[5] || 0);
+      if (typeof r[6] === 'number') {
+        correct = Number(r[6] || 0);
+        cheat = cheat || String(r[7] || '0 lần');
+      } else {
+        cheat = cheat || String(r[6] || '0 lần');
+      }
+      id = 'sub_' + (username ? username + '_' : '') + (submitted_at ? submitted_at.replace(/[^0-9]/g, '') : i);
+    }
+
+    // Auto-regrade if score is 0 but student answers details exist
+    if (detailsObj && examTitle && (score === 0 || isNaN(score))) {
+      var matchedExam = examsMap[examTitle.trim()];
+      if (matchedExam && matchedExam.answers) {
+        var regraded = gradeExamLocally(matchedExam, detailsObj);
+        if (regraded.score > 0 || regraded.correct > 0) {
+          score = regraded.score;
+          correct = regraded.correct;
+        }
+      }
+    }
+
+    history.push({
+      id: id,
+      submitted_at: submitted_at,
+      username: username,
+      name: name,
+      group: group,
+      examTitle: examTitle,
+      score: score,
+      correct: correct,
+      cheat: cheat,
+      details: detailsObj
+    });
   }
   return history;
+}
+
+function gradeExamLocally(exam, details) {
+  var score = 0;
+  var correctCount = 0;
+  var answers = exam.answers || {};
+
+  // Part 1: Multiple Choice
+  var p1Ans = answers.p1 || {};
+  var p1Details = details.p1 || {};
+  var p1Keys = Object.keys(p1Ans);
+  for (var k = 0; k < p1Keys.length; k++) {
+    var qNum = p1Keys[k];
+    var correctOpt = String(p1Ans[qNum] || '').trim().toUpperCase();
+    var stuOpt = String(p1Details[qNum] || '').trim().toUpperCase();
+    if (correctOpt && stuOpt && correctOpt === stuOpt) {
+      score += 0.25;
+      correctCount++;
+    }
+  }
+
+  // Part 2: True/False 4 sub-items
+  var p2Ans = answers.p2 || {};
+  var p2Details = details.p2 || {};
+  var p2Keys = Object.keys(p2Ans);
+  for (var i = 0; i < p2Keys.length; i++) {
+    var qNum2 = p2Keys[i];
+    var correctSub = p2Ans[qNum2] || {};
+    var stuSub = p2Details[qNum2] || {};
+    var subCorrectCount = 0;
+
+    ['a', 'b', 'c', 'd'].forEach(function(opt) {
+      var cVal = String(correctSub[opt] || '').trim().toUpperCase();
+      var sVal = String(stuSub[opt] || '').trim().toUpperCase();
+      if (cVal && sVal && (cVal === sVal || (cVal === 'Đ' && sVal === 'D') || (cVal === 'S' && sVal === 'S'))) {
+        subCorrectCount++;
+        correctCount++;
+      }
+    });
+
+    if (subCorrectCount === 1) score += 0.1;
+    else if (subCorrectCount === 2) score += 0.25;
+    else if (subCorrectCount === 3) score += 0.5;
+    else if (subCorrectCount === 4) score += 1.0;
+  }
+
+  // Part 3: Short Numerical
+  var p3Ans = answers.p3 || {};
+  var p3Details = details.p3 || {};
+  var p3Keys = Object.keys(p3Ans);
+  for (var j = 0; j < p3Keys.length; j++) {
+    var qNum3 = p3Keys[j];
+    var cStr = String(p3Ans[qNum3] || '').trim().replace(',', '.');
+    var sStr = String(p3Details[qNum3] || '').trim().replace(',', '.');
+    if (cStr && sStr && cStr.toLowerCase() === sStr.toLowerCase()) {
+      score += 0.5;
+      correctCount++;
+    }
+  }
+
+  score = Math.round(score * 100) / 100;
+  return { score: Math.min(10, score), correct: correctCount };
 }
 
 function saveSubmissionToSheet(ss, sub) {
   var sheet = getHistorySheet(ss);
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['ID', 'Thời Gian', 'Tài Khoản', 'Họ Tên', 'Lớp', 'Đề Thi', 'Điểm', 'Số Câu Đúng', 'Cảnh Báo']);
+    sheet.appendRow(['Thời Gian', 'Tài Khoản', 'Họ Tên', 'Lớp', 'Đề Thi', 'Điểm', 'Cảnh Báo', 'Chi Tiết Bài Làm']);
   }
   sheet.appendRow([
-    sub.id || 'sub_' + new Date().getTime(),
     sub.submitted_at || new Date().toLocaleString('vi-VN'),
     sub.username,
     sub.name,
     sub.group,
     sub.examTitle,
     sub.score,
-    sub.correct,
-    sub.cheat
+    sub.cheat || '0 lần',
+    JSON.stringify(sub.details || {})
   ]);
 }
 
@@ -1327,7 +1496,7 @@ function clearHistorySheet(ss) {
   var sheet = getHistorySheet(ss);
   if (sheet) {
     sheet.clearContents();
-    sheet.appendRow(['ID', 'Thời Gian', 'Tài Khoản', 'Họ Tên', 'Lớp', 'Đề Thi', 'Điểm', 'Số Câu Đúng', 'Cảnh Báo']);
+    sheet.appendRow(['Thời Gian', 'Tài Khoản', 'Họ Tên', 'Lớp', 'Đề Thi', 'Điểm', 'Cảnh Báo', 'Chi Tiết Bài Làm']);
   }
 }
 `;

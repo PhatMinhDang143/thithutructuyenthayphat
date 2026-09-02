@@ -22,9 +22,9 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
   useEffect(() => {
     const list = (Object.entries(students) as [string, StudentAccount][]).map(([username, data]) => {
       let u = username || data.username || '';
-      let p = String(data.password !== undefined ? data.password : '123').trim();
+      let p = String(data.password !== undefined ? data.password : '').trim();
       let n = String(data.name || '').trim();
-      let g = String(data.group || '12A1').trim();
+      let g = String(data.group || 'Chưa phân lớp').trim();
 
       // Auto-detect if name and password got inverted
       const pHasAccentsOrSpaces = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(p) || p.includes(' ');
@@ -78,9 +78,9 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
       if (cleanUser) {
         obj[cleanUser] = {
           username: cleanUser,
-          password: s.password ? s.password.trim() : '123',
+          password: s.password !== undefined ? s.password.trim() : '',
           name: s.name.trim() || 'Học sinh',
-          group: s.group ? s.group.trim() : '12A1',
+          group: s.group ? s.group.trim() : 'Chưa phân lớp',
         };
       }
     });

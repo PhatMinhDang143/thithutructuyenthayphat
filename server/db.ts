@@ -63,6 +63,111 @@ class SequentialQueue {
 const writeQueue = new SequentialQueue();
 
 /**
+ * Normalizes, repairs, and sanitizes a raw store object into a guaranteed valid ServerStore structure
+ */
+function normalizeStore(rawObj: any): ServerStore {
+  const defaultClasses = ['Tất cả', '12A1', '12A2', '12A3', '11B1', '10C1'];
+  const store: ServerStore = {
+    exams: [],
+    students: {},
+    history: [],
+    classes: defaultClasses,
+    lastUpdated: Date.now(),
+  };
+
+  if (!rawObj || typeof rawObj !== 'object') {
+    return store;
+  }
+
+  // 1. Separate exams and misplaced submissions
+  const rawExams = Array.isArray(rawObj.exams) ? rawObj.exams : [];
+  const rawHistory = Array.isArray(rawObj.history) ? rawObj.history : [];
+
+  const allEntries = [...rawExams, ...rawHistory];
+  const seenExamIds = new Set<string>();
+  const seenSubIds = new Set<string>();
+
+  for (const item of allEntries) {
+    if (!item || typeof item !== 'object') continue;
+
+    // Detect if this is a submission
+    const isSubmission =
+      (typeof item.id === 'string' && item.id.startsWith('sub_')) ||
+      item.submitted_at !== undefined ||
+      item.score !== undefined;
+
+    if (isSubmission) {
+      const subId = item.id || `sub_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      if (!seenSubIds.has(subId)) {
+        seenSubIds.add(subId);
+        store.history.push({
+          ...item,
+          id: subId,
+        });
+      }
+    } else {
+      // It is an exam
+      const examId = item.id || `ex_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      if (!seenExamIds.has(examId)) {
+        seenExamIds.add(examId);
+        store.exams.push({
+          ...item,
+          id: examId,
+        });
+      }
+    }
+  }
+
+  // 2. Parse Students
+  if (rawObj.students && typeof rawObj.students === 'object' && !Array.isArray(rawObj.students)) {
+    store.students = { ...rawObj.students };
+  }
+
+  // Automatically restore or ensure students from history if missing
+  store.history.forEach((h: any) => {
+    if (h && h.username && h.username !== 'guest') {
+      const u = String(h.username).trim();
+      const lower = u.toLowerCase();
+      if (!store.students[u] && !store.students[lower]) {
+        store.students[lower] = {
+          username: u,
+          name: h.name || u,
+          group: h.group || 'Chưa phân lớp',
+          password: '',
+        };
+      }
+    }
+  });
+
+  // 3. Parse Classes
+  const classSet = new Set<string>(defaultClasses);
+  if (Array.isArray(rawObj.classes)) {
+    rawObj.classes.forEach((c: any) => {
+      if (typeof c === 'string' && c.trim()) classSet.add(c.trim());
+    });
+  }
+  store.exams.forEach((ex) => {
+    const tg = ex.questions?.target_group;
+    if (tg && typeof tg === 'string') {
+      tg.split(',').forEach((g) => {
+        const clean = g.trim();
+        if (clean && clean.toLowerCase() !== 'tất cả') classSet.add(clean);
+      });
+    }
+  });
+  Object.values(store.students).forEach((s: any) => {
+    if (s?.group && typeof s.group === 'string' && s.group.trim()) {
+      classSet.add(s.group.trim());
+    }
+  });
+
+  store.classes = Array.from(classSet);
+  store.lastUpdated = typeof rawObj.lastUpdated === 'number' ? rawObj.lastUpdated : Date.now();
+
+  return store;
+}
+
+/**
  * Validates whether a store object has valid JSON structure
  */
 function isValidStore(obj: any): obj is ServerStore {
@@ -192,35 +297,29 @@ function reconcileWAL(store: ServerStore) {
 }
 
 /**
- * Initialize Database on startup with Self-Healing Rollback
+ * Initialize Database on startup with Self-Healing Rollback and Structure Auto-Repair
  */
 export function initDatabase(): ServerStore {
   let loaded = false;
 
-  // 1. Try reading the primary file
+  // 1. Try reading and normalizing the primary file
   if (fs.existsSync(STORE_FILE)) {
     try {
       const raw = fs.readFileSync(STORE_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
-      if (isValidStore(parsed)) {
-        inMemoryStore = {
-          exams: parsed.exams,
-          students: parsed.students,
-          history: parsed.history,
-          classes: parsed.classes.length > 0 ? parsed.classes : ['Tất cả', '12A1', '12A2', '12A3', '11B1', '10C1'],
-          lastUpdated: parsed.lastUpdated || Date.now(),
-        };
-        loaded = true;
-        console.log(`[DB] Successfully loaded store: ${inMemoryStore.exams.length} exams, ${inMemoryStore.history.length} submissions.`);
-      } else {
-        console.warn('[DB] Primary store failed schema validation. Attempting backup rollback...');
-      }
+      inMemoryStore = normalizeStore(parsed);
+      loaded = true;
+      console.log(
+        `[DB] Successfully loaded & normalized store: ${inMemoryStore.exams.length} exams, ${Object.keys(inMemoryStore.students).length} students, ${inMemoryStore.history.length} submissions.`
+      );
+      // Write back normalized file
+      fs.writeFileSync(STORE_FILE, JSON.stringify(inMemoryStore, null, 2), 'utf-8');
     } catch (err) {
-      console.warn('[DB] Primary store is corrupted or unreadable. Initiating auto-recovery from backups...', err);
+      console.warn('[DB] Primary store failed to parse. Scanning backups...', err);
     }
   }
 
-  // 2. Self-Healing Fallback: Scan rotating backups if primary was corrupted
+  // 2. Fallback to rotating backups if primary failed
   if (!loaded) {
     for (let i = 1; i <= MAX_ROTATING_BACKUPS; i++) {
       const backupPath = path.join(DATA_DIR, `server_store.backup.${i}.json`);
@@ -228,23 +327,19 @@ export function initDatabase(): ServerStore {
         try {
           const raw = fs.readFileSync(backupPath, 'utf-8');
           const parsed = JSON.parse(raw);
-          if (isValidStore(parsed)) {
-            inMemoryStore = {
-              exams: parsed.exams,
-              students: parsed.students,
-              history: parsed.history,
-              classes: parsed.classes,
-              lastUpdated: parsed.lastUpdated || Date.now(),
-            };
-            loaded = true;
-            console.log(`[DB] Recovered state successfully from backup file: backup.${i}.json!`);
-            // Restore recovered store to primary
-            fs.copyFileSync(backupPath, STORE_FILE);
-            break;
-          }
+          inMemoryStore = normalizeStore(parsed);
+          loaded = true;
+          console.log(`[DB] Recovered state successfully from backup file: backup.${i}.json!`);
+          fs.writeFileSync(STORE_FILE, JSON.stringify(inMemoryStore, null, 2), 'utf-8');
+          break;
         } catch (e) {}
       }
     }
+  }
+
+  if (!loaded) {
+    inMemoryStore = normalizeStore({});
+    fs.writeFileSync(STORE_FILE, JSON.stringify(inMemoryStore, null, 2), 'utf-8');
   }
 
   // 3. Reconcile with Write-Ahead Log

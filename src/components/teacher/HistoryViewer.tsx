@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ExamSubmission } from '../../types';
-import { Trash2, ShieldCheck, AlertTriangle, Filter, Search, Award, CheckSquare, Square, RefreshCw, UserCheck, HelpCircle, CheckCircle2 } from 'lucide-react';
-import { clearExamHistory, deleteHistoryEntries } from '../../services/storageService';
+import { Trash2, ShieldCheck, AlertTriangle, Filter, Search, Award, CheckSquare, Square, RefreshCw, UserCheck, HelpCircle, CheckCircle2, Calculator, Upload, ClipboardPaste, X } from 'lucide-react';
+import { clearExamHistory, deleteHistoryEntries, getAuthToken } from '../../services/storageService';
 
 interface HistoryViewerProps {
   history: ExamSubmission[];
@@ -15,7 +15,10 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRegrading, setIsRegrading] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [pasteData, setPasteData] = useState('');
 
   // Extract unique exam titles for filter dropdown
   const uniqueExamTitles = Array.from(
@@ -31,6 +34,64 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
       setTimeout(() => setActionNotice(null), 4000);
       setIsDeleting(false);
       onRefresh();
+    }
+  };
+
+  const handleRegradeAll = async () => {
+    setIsRegrading(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch('/api/admin/regrade', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionNotice(data.message || 'Đã chấm lại điểm toàn bộ bài thi thành công!');
+        setTimeout(() => setActionNotice(null), 4000);
+        onRefresh();
+      } else {
+        alert(data.error || 'Không thể chấm lại bài thi');
+      }
+    } catch (e: any) {
+      alert('Lỗi kết nối máy chủ: ' + e.message);
+    } finally {
+      setIsRegrading(false);
+    }
+  };
+
+  const handleImportSheetData = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pasteData.trim()) return;
+
+    setIsRegrading(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch('/api/admin/import-history', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ rawText: pasteData }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionNotice(data.message || 'Đã nhập và chấm lại điểm thành công!');
+        setTimeout(() => setActionNotice(null), 4000);
+        setShowImportModal(false);
+        setPasteData('');
+        onRefresh();
+      } else {
+        alert(data.error || 'Lỗi khi nhập dữ liệu');
+      }
+    } catch (e: any) {
+      alert('Lỗi: ' + e.message);
+    } finally {
+      setIsRegrading(false);
     }
   };
 
@@ -88,10 +149,8 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
 
   const handleToggleSelectAll = () => {
     if (isAllSelected) {
-      // Deselect all filtered
       setSelectedIds((prev) => prev.filter((id) => !allFilteredIds.includes(id)));
     } else {
-      // Select all filtered
       setSelectedIds((prev) => Array.from(new Set([...prev, ...allFilteredIds])));
     }
   };
@@ -114,11 +173,28 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
             </span>
           </div>
           <p className="text-xs md:text-sm text-neutral-700 font-bold mt-1">
-            Xem điểm số, giám sát chống gian lận, xóa bài làm không hợp lệ hoặc reset lượt thi cho học sinh.
+            Xem điểm số, giám sát chống gian lận, tự động chấm lại điểm từ đáp án gốc hoặc reset lượt thi cho học sinh.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="px-3.5 py-2.5 bg-[#4D6BFE] hover:bg-[#3b5bdb] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black uppercase text-xs tracking-wider flex items-center justify-center gap-1.5 transition-all"
+            title="Dán dòng dữ liệu từ Google Sheet để hệ thống tự động nhận diện câu trả lời và chấm điểm thật ngay lập tức"
+          >
+            <ClipboardPaste className="w-4 h-4" /> Dán Dữ Liệu Sheet
+          </button>
+
+          <button
+            onClick={handleRegradeAll}
+            disabled={isRegrading}
+            className="px-3.5 py-2.5 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black uppercase text-xs tracking-wider flex items-center justify-center gap-1.5 transition-all"
+            title="Tự động chấm lại toàn bộ các bài thi dựa theo đáp án chuẩn của đề"
+          >
+            <Calculator className={`w-4 h-4 ${isRegrading ? 'animate-spin' : ''}`} /> Chấm Lại Điểm
+          </button>
+
           {selectedIds.length > 0 && (
             <button
               onClick={handleDeleteSelected}
@@ -139,6 +215,56 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
         </div>
       </div>
 
+      {/* Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-3 border-[#111111] shadow-[8px_8px_0px_#111111] max-w-2xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b-2 border-[#111111] pb-3">
+              <h3 className="text-lg font-black uppercase text-[#111111] flex items-center gap-2">
+                <ClipboardPaste className="w-5 h-5 text-[#4D6BFE]" /> Dán Dòng Dữ Liệu Sheet & Tự Động Chấm Điểm
+              </h3>
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="p-1 hover:bg-neutral-100 border-2 border-[#111111]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-neutral-700 font-bold">
+              💡 <strong>Cách làm:</strong> Bạn chỉ cần mở Google Sheet, bôi đen và copy (Ctrl+C) các dòng có bài thi của học sinh (gồm cả cột đáp án <code>{'{"p1":...}'}</code>) rồi dán (Ctrl+V) vào ô dưới đây. Hệ thống sẽ <strong>tự động dò đáp án đề thi và chấm điểm chính xác ngay lập tức</strong>!
+            </p>
+
+            <form onSubmit={handleImportSheetData} className="space-y-4">
+              <textarea
+                value={pasteData}
+                onChange={(e) => setPasteData(e.target.value)}
+                placeholder="Dán các dòng copy từ Google Sheet vào đây... Ví dụ:&#10;22:15 01/09/2026	maiphuong12b	Mai Phương	12B	ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4	0	4 lần	{&quot;p1&quot;:{&quot;1&quot;:&quot;D&quot;,...}}"
+                rows={8}
+                className="w-full p-3 bg-[#FDF6E9] border-2 border-[#111111] font-mono text-xs outline-none focus:bg-white shadow-[2px_2px_0px_#111111]"
+              />
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 bg-neutral-100 border-2 border-[#111111] text-xs font-black uppercase"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRegrading || !pasteData.trim()}
+                  className="px-5 py-2.5 bg-[#0F9D58] hover:bg-[#0b8043] text-white border-2 border-[#111111] text-xs font-black uppercase shadow-[3px_3px_0px_#111111] flex items-center gap-2 active:translate-x-[1px] active:translate-y-[1px]"
+                >
+                  <Calculator className="w-4 h-4" /> {isRegrading ? 'Đang chấm điểm...' : 'Bắt Đầu Chấm Điểm & Cập Nhật'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Action Toast / Banner */}
       {actionNotice && (
         <div className="mx-6 p-3 bg-[#0F9D58]/15 border-2 border-[#0F9D58] text-[#0F9D58] font-black text-xs flex items-center gap-2 shadow-[3px_3px_0px_#0F9D58]">
@@ -152,7 +278,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
         <div className="flex items-center gap-2">
           <HelpCircle className="w-4 h-4 text-[#4D6BFE] shrink-0" />
           <span>
-            <strong>Quản lý lượt làm bài:</strong> Khi giáo viên bấm nút xóa bài làm của một học sinh, số lượt nộp của học sinh đó đối với đề thi sẽ được giải phóng để học sinh có thể làm lại bài.
+            <strong>Quản lý lượt làm bài & Điểm số:</strong> Bấm <strong>"Chấm Lại Điểm"</strong> hoặc <strong>"Dán Dữ Liệu Sheet"</strong> để tự động tính điểm chuẩn cho những bài nộp có dữ liệu đáp án. Xóa bài làm sẽ giải phóng lượt nộp để học sinh làm lại bài.
           </span>
         </div>
       </div>

@@ -329,6 +329,15 @@ export default function App() {
                   setSelectedExam(ex);
                   setStudentSubView('exam');
                 }}
+                onViewResult={(ex, submission) => {
+                  setSelectedExam(ex);
+                  setResultData(submission);
+                  const examLeaderboard = (history || [])
+                    .filter((h) => (h.examTitle || '').trim().toLowerCase() === (ex.title || '').trim().toLowerCase())
+                    .sort((a, b) => b.score - a.score);
+                  setLeaderboard(examLeaderboard);
+                  setStudentSubView('result');
+                }}
               />
             )}
           </div>

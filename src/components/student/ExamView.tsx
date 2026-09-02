@@ -78,6 +78,26 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
   const [flaggedQuestions, setFlaggedQuestions] = useState<{ [key: string]: boolean }>({});
 
   const timerRef = useRef<any>(null);
+  const isSubmittedRef = useRef(false);
+
+  // Keep fresh answers in ref to prevent stale closure when timer expires
+  const latestDataRef = useRef({
+    ansPart1,
+    ansPart2,
+    ansPart3,
+    cheatCount,
+    exam,
+  });
+
+  useEffect(() => {
+    latestDataRef.current = {
+      ansPart1,
+      ansPart2,
+      ansPart3,
+      cheatCount,
+      exam,
+    };
+  }, [ansPart1, ansPart2, ansPart3, cheatCount, exam]);
 
   // Restore Draft
   useEffect(() => {
@@ -114,28 +134,48 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
-  // Timer
+  const handleSubmit = (isAuto = false) => {
+    if (isSubmittedRef.current) return;
+    if (!isAuto && !window.confirm('Bạn có chắc chắn muốn nộp bài làm ngay?')) return;
+    
+    isSubmittedRef.current = true;
+    if (timerRef.current) clearInterval(timerRef.current);
+    try {
+      localStorage.removeItem(storageKey);
+    } catch (e) {}
+
+    const latest = latestDataRef.current;
+    const studentAnswers: StudentAnswers = {
+      p1: latest.ansPart1,
+      p2: latest.ansPart2,
+      p3: latest.ansPart3,
+    };
+    onExamSubmit(studentAnswers, latest.cheatCount, latest.exam);
+  };
+
+  const handleSubmitRef = useRef(handleSubmit);
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+  });
+
+  // Timer with safe dynamic ref invocation on expiry
   useEffect(() => {
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
-          clearInterval(timerRef.current);
-          handleSubmit(true);
+          if (timerRef.current) clearInterval(timerRef.current);
+          if (handleSubmitRef.current) {
+            handleSubmitRef.current(true);
+          }
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(timerRef.current);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, []);
-
-  const handleSubmit = (isAuto = false) => {
-    if (!isAuto && !window.confirm('Bạn có chắc chắn muốn nộp bài làm ngay?')) return;
-    clearInterval(timerRef.current);
-    localStorage.removeItem(storageKey);
-    const studentAnswers: StudentAnswers = { p1: ansPart1, p2: ansPart2, p3: ansPart3 };
-    onExamSubmit(studentAnswers, cheatCount, exam);
-  };
 
   // Calculate answered count for progress badge
   const answeredP1Count = Object.values(ansPart1).filter(Boolean).length;

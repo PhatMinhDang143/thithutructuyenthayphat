@@ -58,6 +58,7 @@ export interface StudentAnswers {
 
 export interface ExamSubmission {
   id?: string;
+  examId?: string;
   submitted_at: string;
   username: string;
   name: string;
