@@ -25,8 +25,42 @@ export const ResultView: React.FC<ResultViewProps> = ({
   const [showPdfViewer, setShowPdfViewer] = useState(false);
 
   const cfg = exam.questions || {};
-  const answerKey = resultData.correctAnswers || exam.answers || { p1: {}, p2: {}, p3: {} };
+  const answerKey = resultData.correctAnswers || exam.answers || (resultData as any).answers || { p1: {}, p2: {}, p3: {} };
   
+  const getCorrectP1 = (qNum: number): string => {
+    return String(
+      answerKey.p1?.[qNum] || 
+      (answerKey.p1 as any)?.[String(qNum)] || 
+      (resultData.correctAnswers?.p1 as any)?.[qNum] || 
+      (resultData.correctAnswers?.p1 as any)?.[String(qNum)] || 
+      (exam.answers?.p1 as any)?.[qNum] || 
+      (exam.answers?.p1 as any)?.[String(qNum)] || 
+      ''
+    ).trim().toUpperCase();
+  };
+
+  const getCorrectP2Obj = (qNum: number): Record<string, any> => {
+    return answerKey.p2?.[qNum] || 
+           (answerKey.p2 as any)?.[String(qNum)] || 
+           (resultData.correctAnswers?.p2 as any)?.[qNum] || 
+           (resultData.correctAnswers?.p2 as any)?.[String(qNum)] || 
+           (exam.answers?.p2 as any)?.[qNum] || 
+           (exam.answers?.p2 as any)?.[String(qNum)] || 
+           {};
+  };
+
+  const getCorrectP3 = (qNum: number): string => {
+    return String(
+      answerKey.p3?.[qNum] || 
+      (answerKey.p3 as any)?.[String(qNum)] || 
+      (resultData.correctAnswers?.p3 as any)?.[qNum] || 
+      (resultData.correctAnswers?.p3 as any)?.[String(qNum)] || 
+      (exam.answers?.p3 as any)?.[qNum] || 
+      (exam.answers?.p3 as any)?.[String(qNum)] || 
+      ''
+    ).trim();
+  };
+
   const numP1 = Number(cfg.num_p1) || (exam.answers?.p1 ? Object.keys(exam.answers.p1).length : (resultData.correctAnswers?.p1 ? Object.keys(resultData.correctAnswers.p1).length : 12));
   const numP2 = Number(cfg.num_p2) || (exam.answers?.p2 ? Object.keys(exam.answers.p2).length : (resultData.correctAnswers?.p2 ? Object.keys(resultData.correctAnswers.p2).length : 4));
   const numP3 = Number(cfg.num_p3) || (exam.answers?.p3 ? Object.keys(exam.answers.p3).length : (resultData.correctAnswers?.p3 ? Object.keys(resultData.correctAnswers.p3).length : 6));
@@ -52,14 +86,14 @@ export const ResultView: React.FC<ResultViewProps> = ({
   // Helper calculation for Part 1 correctness
   const isP1Correct = (qNum: number) => {
     const sAns = String(resultData.details?.p1?.[qNum] || (resultData.details?.p1 as any)?.[String(qNum)] || '').trim().toUpperCase();
-    const cAns = String(answerKey.p1?.[qNum] || (answerKey.p1 as any)?.[String(qNum)] || '').trim().toUpperCase();
+    const cAns = getCorrectP1(qNum);
     return sAns !== '' && cAns !== '' && sAns === cAns;
   };
 
   // Helper calculation for Part 2 correctness
   const getP2Stats = (qNum: number) => {
     const sAnsObj = resultData.details?.p2?.[qNum] || (resultData.details?.p2 as any)?.[String(qNum)] || {};
-    const cAnsObj = answerKey.p2?.[qNum] || (answerKey.p2 as any)?.[String(qNum)] || {};
+    const cAnsObj = getCorrectP2Obj(qNum);
     
     let correctCount = 0;
     (['a', 'b', 'c', 'd'] as const).forEach((sub) => {
@@ -82,7 +116,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
   // Helper calculation for Part 3 correctness
   const isP3Correct = (qNum: number) => {
     const sAns = String(resultData.details?.p3?.[qNum] || (resultData.details?.p3 as any)?.[String(qNum)] || '');
-    const cAns = String(answerKey.p3?.[qNum] || (answerKey.p3 as any)?.[String(qNum)] || '');
+    const cAns = getCorrectP3(qNum);
     if (!sAns.trim() || !cAns.trim()) return false;
     return sAns.trim().toLowerCase() === cAns.trim().toLowerCase() || normalizeShortAnswer(sAns) === normalizeShortAnswer(cAns);
   };
@@ -248,8 +282,8 @@ export const ResultView: React.FC<ResultViewProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                     {filteredP1.map((qNum) => {
                       const sAns = String(resultData.details?.p1?.[qNum] || (resultData.details?.p1 as any)?.[String(qNum)] || '').trim().toUpperCase();
-                      const cAns = String(answerKey.p1?.[qNum] || (answerKey.p1 as any)?.[String(qNum)] || '').trim().toUpperCase();
-                      const isCorrect = sAns !== '' && cAns !== '' && sAns === cAns;
+                      const cAns = getCorrectP1(qNum);
+                      const isCorrect = isP1Correct(qNum);
                       const isBlank = !sAns;
 
                       return (
@@ -344,7 +378,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {filteredP2.map((qNum) => {
                       const sAnsObj = resultData.details?.p2?.[qNum] || (resultData.details?.p2 as any)?.[String(qNum)] || {};
-                      const cAnsObj = answerKey.p2?.[qNum] || (answerKey.p2 as any)?.[String(qNum)] || {};
+                      const cAnsObj = getCorrectP2Obj(qNum);
                       const stats = getP2Stats(qNum);
 
                       return (
@@ -441,7 +475,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                     {filteredP3.map((qNum) => {
                       const sAns = String(resultData.details?.p3?.[qNum] || (resultData.details?.p3 as any)?.[String(qNum)] || '');
-                      const cAns = String(answerKey.p3?.[qNum] || (answerKey.p3 as any)?.[String(qNum)] || '');
+                      const cAns = getCorrectP3(qNum);
                       const isCorrect = isP3Correct(qNum);
                       const isBlank = !sAns.trim();
 

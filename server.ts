@@ -89,12 +89,18 @@ export async function syncStoreWithGAS(): Promise<boolean> {
             const mergedDetails = h.details || existing?.details;
             let finalScore = Number(h.score) || 0;
             let finalCorrect = Number(h.correct) || 0;
-            let finalCorrectAnswers = h.correctAnswers || existing?.correctAnswers;
 
-            if (mergedDetails && (finalScore === 0 || !existing)) {
-              const matchedExam = store.exams.find(
-                (e: any) => e.title === h.examTitle || e.id === h.examId
-              );
+            const normalizeTitle = (t: string) => (t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            const matchedExam = store.exams.find(
+              (e: any) => (e.id && (e.id === h.examId || e.id === existing?.examId)) ||
+                          normalizeTitle(e.title) === normalizeTitle(h.examTitle) ||
+                          normalizeTitle(e.title).includes(normalizeTitle(h.examTitle)) ||
+                          normalizeTitle(h.examTitle).includes(normalizeTitle(e.title))
+            );
+
+            let finalCorrectAnswers = h.correctAnswers || existing?.correctAnswers || (matchedExam ? matchedExam.answers : undefined);
+
+            if (mergedDetails && (finalScore === 0 || !existing || !finalCorrectAnswers)) {
               if (matchedExam && matchedExam.answers) {
                 const regraded = gradeSubmissionAuthoritatively(
                   matchedExam,
@@ -105,13 +111,14 @@ export async function syncStoreWithGAS(): Promise<boolean> {
                 if (regraded.score > 0 || regraded.correct > 0) {
                   finalScore = regraded.score;
                   finalCorrect = regraded.correct;
-                  finalCorrectAnswers = regraded.correctAnswers;
+                  finalCorrectAnswers = regraded.correctAnswers || matchedExam.answers;
                 }
               }
             }
 
             histMap.set(key, {
               ...h,
+              examId: h.examId || existing?.examId || (matchedExam ? matchedExam.id : undefined),
               score: finalScore,
               correct: finalCorrect,
               details: mergedDetails,
@@ -548,11 +555,24 @@ app.get('/api/all', (req, res) => {
     });
 
     // 4. Return scoped leaderboard with correct answers for student's own submissions
+    const cleanUserStr = (s?: string) => (s || '').toLowerCase().trim();
+    const normalizeTitle = (t: string) => (t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
     historyList = store.history.map((h) => {
-      const isOwner = user && (h.username === user.username || (user.name && h.name === user.name));
-      const matchedExam = store.exams.find(
-        (e) => e.title === h.examTitle || e.id === h.examId
+      const isOwner = user && (
+        (user.username && cleanUserStr(h.username) === cleanUserStr(user.username)) ||
+        (user.name && cleanUserStr(h.name) === cleanUserStr(user.name))
       );
+
+      const matchedExam = store.exams.find(
+        (e) => (e.id && (e.id === h.examId)) ||
+               normalizeTitle(e.title) === normalizeTitle(h.examTitle) ||
+               normalizeTitle(e.title).includes(normalizeTitle(h.examTitle)) ||
+               normalizeTitle(h.examTitle).includes(normalizeTitle(e.title))
+      );
+
+      const resolvedAnswers = h.correctAnswers || (matchedExam ? matchedExam.answers : undefined);
+
       return {
         id: h.id,
         submitted_at: h.submitted_at,
@@ -565,7 +585,7 @@ app.get('/api/all', (req, res) => {
         correct: h.correct,
         cheat: isOwner ? h.cheat : '0 lần',
         details: isOwner ? h.details : undefined,
-        correctAnswers: isOwner ? (h.correctAnswers || (matchedExam ? matchedExam.answers : undefined)) : undefined,
+        correctAnswers: isOwner ? resolvedAnswers : undefined,
       };
     });
   }

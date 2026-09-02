@@ -86,21 +86,31 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
 
   const handleOpenResult = (sub: ExamSubmission) => {
     if (!onViewResult) return;
+    const normalizeTitle = (t?: string) => (t || '').toLowerCase().replace(/\s+/g, ' ').trim();
     const matchedExam = safeExams.find(
-      (e) => (e.id && e.id === sub.examId) || (e.title && e.title.trim().toLowerCase() === (sub.examTitle || '').trim().toLowerCase())
+      (e) => (e.id && e.id === sub.examId) ||
+             normalizeTitle(e.title) === normalizeTitle(sub.examTitle) ||
+             normalizeTitle(e.title).includes(normalizeTitle(sub.examTitle)) ||
+             normalizeTitle(sub.examTitle).includes(normalizeTitle(e.title))
     );
 
-    const targetExam: ExamItem = matchedExam || {
-      id: sub.examId || 'exam_' + Date.now(),
-      title: sub.examTitle || 'Bài kiểm tra',
-      duration: 45,
-      questions: {
-        exam_type: 'custom',
-        num_p1: 12,
-        num_p2: 4,
-        num_p3: 6,
-      },
-    };
+    const targetExam: ExamItem = matchedExam
+      ? {
+          ...matchedExam,
+          answers: sub.correctAnswers || matchedExam.answers,
+        }
+      : {
+          id: sub.examId || 'exam_' + Date.now(),
+          title: sub.examTitle || 'Bài kiểm tra',
+          duration: 45,
+          answers: sub.correctAnswers,
+          questions: {
+            exam_type: 'custom',
+            num_p1: 12,
+            num_p2: 4,
+            num_p3: 6,
+          },
+        };
 
     onViewResult(targetExam, sub);
   };

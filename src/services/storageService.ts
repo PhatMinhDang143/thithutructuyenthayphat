@@ -594,13 +594,48 @@ export const fetchAllData = async (
   }
 
   const historyMap = new Map<string, ExamSubmission>();
+  const normalizeExamTitle = (t?: string) => (t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+  // Process in order: Local -> GAS -> Server (Server has highest authority for graded results)
   [...localHistory, ...gasHistory, ...serverHistory].forEach((h) => {
     if (h && h.username && h.examTitle) {
       const key = `${h.username}_${h.examTitle}_${h.submitted_at}`;
-      historyMap.set(key, h);
+      const existing = historyMap.get(key);
+
+      const mergedDetails = h.details || existing?.details;
+      const mergedCorrectAnswers = h.correctAnswers || existing?.correctAnswers;
+      const finalScore = h.score !== undefined && h.score !== 0 ? h.score : (existing?.score || h.score || 0);
+      const finalCorrect = h.correct !== undefined && h.correct !== 0 ? h.correct : (existing?.correct || h.correct || 0);
+
+      historyMap.set(key, {
+        ...(existing || {}),
+        ...h,
+        score: finalScore,
+        correct: finalCorrect,
+        details: mergedDetails,
+        correctAnswers: mergedCorrectAnswers,
+      });
     }
   });
-  const mergedHistory = Array.from(historyMap.values());
+
+  const mergedHistory = Array.from(historyMap.values()).map((h) => {
+    if (!h.correctAnswers) {
+      const matched = [...finalExamsList, ...gasExams].find(
+        (e) => (e.id && e.id === h.examId) ||
+               normalizeExamTitle(e.title) === normalizeExamTitle(h.examTitle) ||
+               normalizeExamTitle(e.title).includes(normalizeExamTitle(h.examTitle)) ||
+               normalizeExamTitle(h.examTitle).includes(normalizeExamTitle(e.title))
+      );
+      if (matched && matched.answers) {
+        return {
+          ...h,
+          correctAnswers: matched.answers,
+        };
+      }
+    }
+    return h;
+  });
+
   safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(mergedHistory));
 
   // === DEDUCE UNIQUE CLASSES ===
