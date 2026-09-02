@@ -2,11 +2,9 @@ import { ExamItem, StudentAccount, ExamSubmission } from '../types';
 
 export const INITIAL_CLASSES = [
   'Tất cả',
-  '12A1',
-  '12A2',
-  '12A3',
-  '11B1',
-  '10C1'
+  '11A',
+  '12G3',
+  '12B'
 ];
 
 export const INITIAL_STUDENTS: { [username: string]: StudentAccount } = {};

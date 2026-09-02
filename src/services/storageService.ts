@@ -1224,6 +1224,75 @@ function getHistorySheet(ss) {
   return findSheet(ss, ['History', 'Lichsu', 'LichSu', 'Lịch sử', 'Nhat_Ky_Thi']) || ss.insertSheet('History');
 }
 
+function parseAnswersFromSheet(raw) {
+  if (!raw) return { p1: {}, p2: {}, p3: {} };
+  if (typeof raw === 'object' && (raw.p1 || raw.p2 || raw.p3)) {
+    return { p1: raw.p1 || {}, p2: raw.p2 || {}, p3: raw.p3 || {} };
+  }
+  var str = String(raw).trim();
+  if (!str) return { p1: {}, p2: {}, p3: {} };
+
+  // 1. Try JSON parse
+  if (str.indexOf('{') === 0 && str.lastIndexOf('}') === str.length - 1) {
+    try {
+      var parsed = JSON.parse(str);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          p1: parsed.p1 || {},
+          p2: parsed.p2 || {},
+          p3: parsed.p3 || {}
+        };
+      }
+    } catch(e) {}
+  }
+
+  // 2. Parse human-friendly format (1A 2B 3C, 1aĐ 1bS, C1: 15...)
+  var p1 = {}, p2 = {}, p3 = {};
+
+  // Part 2
+  var p2Regex = /(?:câu|c)?\s*(\d+)\s*[\.\:\-\s]?\s*([abcd])\s*[\.\:\-\s]?\s*([ĐđSsTtFf]|đúng|sai|true|false)/gi;
+  var m2;
+  while ((m2 = p2Regex.exec(str)) !== null) {
+    var qNum2 = m2[1];
+    var sub2 = m2[2].toLowerCase();
+    var val2 = (m2[3].toLowerCase() === 'đ' || m2[3].toLowerCase() === 'đúng' || m2[3].toLowerCase() === 't' || m2[3].toLowerCase() === 'true') ? 'Đ' : 'S';
+    if (!p2[qNum2]) p2[qNum2] = {};
+    p2[qNum2][sub2] = val2;
+  }
+
+  // Part 3
+  var p3Regex = /(?:phần\s*3|p3|câu|c)?\s*(\d+)\s*[\:\=]\s*([^\,\;\n\r\|]+)/gi;
+  var m3;
+  while ((m3 = p3Regex.exec(str)) !== null) {
+    var qNum3 = m3[1];
+    var val3 = m3[2].trim();
+    if (val3 && !/^[abcd]$/i.test(val3) && val3.length <= 20) {
+      p3[qNum3] = val3;
+    }
+  }
+
+  // Part 1
+  var p1Regex = /(?:câu|c)?\s*(\d+)\s*[\.\:\-\s]?\s*([ABCDabcd])(?!\w)/g;
+  var m1;
+  while ((m1 = p1Regex.exec(str)) !== null) {
+    var qNum1 = m1[1];
+    var letter = m1[2].toUpperCase();
+    p1[qNum1] = letter;
+  }
+
+  // Fallback: Pure sequence like "A B C D A B"
+  if (Object.keys(p1).length === 0 && Object.keys(p2).length === 0 && Object.keys(p3).length === 0) {
+    var tokens = str.replace(/[^A-Za-z]/g, ' ').trim().split(/\s+/);
+    if (tokens.length > 0 && tokens.every(function(t) { return t.length === 1 && /^[A-Da-d]$/.test(t); })) {
+      for (var k = 0; k < tokens.length; k++) {
+        p1[String(k + 1)] = tokens[k].toUpperCase();
+      }
+    }
+  }
+
+  return { p1: p1, p2: p2, p3: p3 };
+}
+
 function getExamsData(ss) {
   var sheet = getExamSheet(ss);
   var rows = sheet.getDataRange().getValues();
@@ -1234,12 +1303,18 @@ function getExamsData(ss) {
     var r = rows[i];
     if (r[0]) {
       try {
+        var qObj = {};
+        if (r[3]) {
+          try { qObj = typeof r[3] === 'string' ? JSON.parse(r[3]) : r[3]; } catch(e) {}
+        }
+        var ansObj = parseAnswersFromSheet(r[4]);
+
         exams.push({
           id: String(r[0]),
           title: String(r[1] || ''),
           duration: Number(r[2]) || 45,
-          questions: r[3] ? JSON.parse(r[3]) : {},
-          answers: r[4] ? JSON.parse(r[4]) : {}
+          questions: qObj,
+          answers: ansObj
         });
       } catch(e) {}
     }

@@ -433,39 +433,9 @@
     },
     "thaovy12b": {
       "username": "thaovy12b",
-      "name": "thaovy12b",
+      "name": "Thảo Vy",
       "password": "thaovy",
       "group": "12B"
-    },
-    "hs_5": {
-      "username": "hs_5",
-      "name": "Học sinh 5",
-      "password": "123",
-      "group": "12A1"
-    },
-    "hs_4": {
-      "username": "hs_4",
-      "name": "Học sinh 4",
-      "password": "123",
-      "group": "12A1"
-    },
-    "hs_3": {
-      "username": "hs_3",
-      "name": "Học sinh 3",
-      "password": "123",
-      "group": "12A1"
-    },
-    "hs_2": {
-      "username": "hs_2",
-      "name": "Học sinh 2",
-      "password": "123",
-      "group": "12A1"
-    },
-    "hs_1": {
-      "username": "hs_1",
-      "name": "Học sinh 1",
-      "password": "123",
-      "group": "12A1"
     }
   },
   "history": [
@@ -5058,9 +5028,9 @@
     "12A3",
     "11B1",
     "10C1",
+    "11A",
     "12B",
-    "12G3",
-    "11A"
+    "12G3"
   ],
-  "lastUpdated": 1788349149371
+  "lastUpdated": 1788349747838
 }

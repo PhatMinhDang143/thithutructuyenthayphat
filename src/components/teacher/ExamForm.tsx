@@ -72,6 +72,17 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   const [ansP2, setAnsP2] = useState<AnswerKeyPart2>(initialData?.answers?.p2 || {});
   const [ansP3, setAnsP3] = useState<AnswerKeyPart3>(initialData?.answers?.p3 || {});
 
+  // Synchronize state when initialData changes or loads
+  useEffect(() => {
+    if (initialData) {
+      if (initialData.answers) {
+        setAnsP1(initialData.answers.p1 || {});
+        setAnsP2(initialData.answers.p2 || {});
+        setAnsP3(initialData.answers.p3 || {});
+      }
+    }
+  }, [initialData]);
+
   const [isSaving, setIsSaving] = useState(false);
 
   const handleApplyQuickAnswers = (data: {
@@ -933,27 +944,37 @@ export const ExamForm: React.FC<ExamFormProps> = ({
           {/* Part I Answers */}
           {numP1 > 0 && (
             <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111]">
-              <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider mb-3 flex items-center gap-2">
-                <span className="w-3 h-3 bg-[#4D6BFE] border border-[#111111]"></span>
-                Phần I: Đáp Án Trắc Nghiệm ({numP1} câu)
-              </h4>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-3 h-3 bg-[#4D6BFE] border border-[#111111]"></span>
+                  Phần I: Đáp Án Trắc Nghiệm ({numP1} câu)
+                </h4>
+                <span className="text-[11px] font-black px-2 py-0.5 bg-white border border-[#111111]">
+                  Đã nhập: {Object.values(ansP1).filter(Boolean).length}/{numP1} câu
+                </span>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {Array.from({ length: numP1 }, (_, i) => i + 1).map((qNum) => (
-                  <div key={qNum} className="flex items-center gap-2 bg-white p-2 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
-                    <span className="text-xs font-black text-[#111111] w-8 text-center">C.{qNum}</span>
-                    <select
-                      value={ansP1[qNum] || ''}
-                      onChange={(e) => setAnsP1({ ...ansP1, [qNum]: e.target.value as any })}
-                      className="flex-1 bg-[#FDF6E9] text-[#111111] text-xs font-black p-1.5 border-2 border-[#111111] outline-none cursor-pointer"
-                    >
-                      <option value="">Chọn</option>
-                      <option value="A">A</option>
-                      <option value="B">B</option>
-                      <option value="C">C</option>
-                      <option value="D">D</option>
-                    </select>
-                  </div>
-                ))}
+                {Array.from({ length: numP1 }, (_, i) => i + 1).map((qNum) => {
+                  const currentVal = ansP1[qNum] || (ansP1 as any)?.[String(qNum)] || '';
+                  return (
+                    <div key={qNum} className="flex items-center gap-2 bg-white p-2 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                      <span className="text-xs font-black text-[#111111] w-8 text-center">C.{qNum}</span>
+                      <select
+                        value={currentVal}
+                        onChange={(e) => setAnsP1({ ...ansP1, [qNum]: e.target.value as any })}
+                        className={`flex-1 text-[#111111] text-xs font-black p-1.5 border-2 border-[#111111] outline-none cursor-pointer ${
+                          currentVal ? 'bg-[#4D6BFE]/10 font-black' : 'bg-[#FDF6E9]'
+                        }`}
+                      >
+                        <option value="">Chọn</option>
+                        <option value="A">A</option>
+                        <option value="B">B</option>
+                        <option value="C">C</option>
+                        <option value="D">D</option>
+                      </select>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -961,37 +982,50 @@ export const ExamForm: React.FC<ExamFormProps> = ({
           {/* Part II Answers */}
           {numP2 > 0 && (
             <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111]">
-              <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider mb-3 flex items-center gap-2">
-                <span className="w-3 h-3 bg-[#FFC93C] border border-[#111111]"></span>
-                Phần II: Đáp Án Đúng / Sai ({numP2} câu)
-              </h4>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-3 h-3 bg-[#FFC93C] border border-[#111111]"></span>
+                  Phần II: Đáp Án Đúng / Sai ({numP2} câu)
+                </h4>
+                <span className="text-[11px] font-black px-2 py-0.5 bg-white border border-[#111111]">
+                  Đã nhập: {Object.keys(ansP2).length}/{numP2} câu
+                </span>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {Array.from({ length: numP2 }, (_, i) => i + 1).map((qNum) => (
-                  <div key={qNum} className="bg-white p-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
-                    <span className="text-xs font-black text-[#111111] block mb-2 border-b-2 border-[#111111] pb-1">Câu {qNum}</span>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(['a', 'b', 'c', 'd'] as const).map((sub) => (
-                        <div key={sub} className="flex items-center gap-2 bg-[#FDF6E9] p-1.5 border-2 border-[#111111]">
-                          <span className="text-xs font-black uppercase w-4 text-[#111111]">{sub}</span>
-                          <select
-                            value={ansP2[qNum]?.[sub] || ''}
-                            onChange={(e) =>
-                              setAnsP2({
-                                ...ansP2,
-                                [qNum]: { ...(ansP2[qNum] || {}), [sub]: e.target.value as any },
-                              })
-                            }
-                            className="flex-1 bg-white text-[#111111] text-xs font-black p-1 border-2 border-[#111111] outline-none cursor-pointer"
-                          >
-                            <option value="">-</option>
-                            <option value="Đ">Đúng</option>
-                            <option value="S">Sai</option>
-                          </select>
-                        </div>
-                      ))}
+                {Array.from({ length: numP2 }, (_, i) => i + 1).map((qNum) => {
+                  const qObj = ansP2[qNum] || (ansP2 as any)?.[String(qNum)] || {};
+                  return (
+                    <div key={qNum} className="bg-white p-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                      <span className="text-xs font-black text-[#111111] block mb-2 border-b-2 border-[#111111] pb-1">Câu {qNum}</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['a', 'b', 'c', 'd'] as const).map((sub) => {
+                          const subVal = qObj[sub] || '';
+                          return (
+                            <div key={sub} className="flex items-center gap-2 bg-[#FDF6E9] p-1.5 border-2 border-[#111111]">
+                              <span className="text-xs font-black uppercase w-4 text-[#111111]">{sub}</span>
+                              <select
+                                value={subVal}
+                                onChange={(e) =>
+                                  setAnsP2({
+                                    ...ansP2,
+                                    [qNum]: { ...qObj, [sub]: e.target.value as any },
+                                  })
+                                }
+                                className={`flex-1 text-[#111111] text-xs font-black p-1 border-2 border-[#111111] outline-none cursor-pointer ${
+                                  subVal === 'Đ' ? 'bg-[#0F9D58]/20 text-[#0F9D58]' : subVal === 'S' ? 'bg-[#E63946]/20 text-[#E63946]' : 'bg-white'
+                                }`}
+                              >
+                                <option value="">-</option>
+                                <option value="Đ">Đúng</option>
+                                <option value="S">Sai</option>
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -999,23 +1033,33 @@ export const ExamForm: React.FC<ExamFormProps> = ({
           {/* Part III Answers */}
           {numP3 > 0 && (
             <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111]">
-              <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider mb-3 flex items-center gap-2">
-                <span className="w-3 h-3 bg-[#0F9D58] border border-[#111111]"></span>
-                Phần III: Đáp Án Trả Lời Ngắn ({numP3} câu)
-              </h4>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-black text-[#111111] uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-3 h-3 bg-[#0F9D58] border border-[#111111]"></span>
+                  Phần III: Đáp Án Trả Lời Ngắn ({numP3} câu)
+                </h4>
+                <span className="text-[11px] font-black px-2 py-0.5 bg-white border border-[#111111]">
+                  Đã nhập: {Object.values(ansP3).filter((v) => v !== '' && v !== undefined).length}/{numP3} câu
+                </span>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {Array.from({ length: numP3 }, (_, i) => i + 1).map((qNum) => (
-                  <div key={qNum} className="flex items-center gap-2 bg-white p-2.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
-                    <span className="text-xs font-black text-[#111111] w-10 text-center">C.{qNum}</span>
-                    <input
-                      type="text"
-                      value={ansP3[qNum] || ''}
-                      onChange={(e) => setAnsP3({ ...ansP3, [qNum]: e.target.value })}
-                      className="flex-1 bg-[#FDF6E9] border-2 border-[#111111] p-1.5 text-[#111111] text-xs font-black outline-none"
-                      placeholder="Đáp số (VD: 15)..."
-                    />
-                  </div>
-                ))}
+                {Array.from({ length: numP3 }, (_, i) => i + 1).map((qNum) => {
+                  const currentVal = ansP3[qNum] !== undefined ? ansP3[qNum] : ((ansP3 as any)?.[String(qNum)] ?? '');
+                  return (
+                    <div key={qNum} className="flex items-center gap-2 bg-white p-2.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                      <span className="text-xs font-black text-[#111111] w-10 text-center">C.{qNum}</span>
+                      <input
+                        type="text"
+                        value={currentVal}
+                        onChange={(e) => setAnsP3({ ...ansP3, [qNum]: e.target.value })}
+                        className={`flex-1 border-2 border-[#111111] p-1.5 text-[#111111] text-xs font-black outline-none ${
+                          currentVal ? 'bg-[#0F9D58]/10' : 'bg-[#FDF6E9]'
+                        }`}
+                        placeholder="Đáp số (VD: 15)..."
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

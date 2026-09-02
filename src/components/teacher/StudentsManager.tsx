@@ -55,12 +55,16 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
   };
 
   const handleAddRow = () => {
+    const defaultGroup = selectedClassFilter !== 'Tất cả' 
+      ? selectedClassFilter 
+      : (classes.find(c => c !== 'Tất cả') || '12B');
+
     setStudentList([
       {
-        username: `hs_${Date.now().toString().slice(-4)}`,
-        password: '123',
-        name: 'Học sinh mới',
-        group: selectedClassFilter !== 'Tất cả' ? selectedClassFilter : '12A1',
+        username: '',
+        password: '',
+        name: '',
+        group: defaultGroup,
       },
       ...studentList,
     ]);

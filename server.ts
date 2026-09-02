@@ -33,6 +33,83 @@ export async function pushToGAS(action: string, payload: any): Promise<boolean> 
   }
 }
 
+// Smart Answer Parser for flexible formats (JSON, plain text like 1A 2B 3C, 1aĐ 1bS, C1: 15...)
+function parseAnswersFlexibly(raw: any): { p1: Record<string, string>; p2: Record<string, Record<string, string>>; p3: Record<string, string> } {
+  if (!raw) return { p1: {}, p2: {}, p3: {} };
+  if (typeof raw === 'object' && (raw.p1 || raw.p2 || raw.p3)) {
+    return {
+      p1: raw.p1 || {},
+      p2: raw.p2 || {},
+      p3: raw.p3 || {},
+    };
+  }
+
+  const str = String(raw).trim();
+  if (!str) return { p1: {}, p2: {}, p3: {} };
+
+  // 1. Try strict JSON parse
+  if (str.startsWith('{') && str.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(str);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          p1: parsed.p1 || {},
+          p2: parsed.p2 || {},
+          p3: parsed.p3 || {},
+        };
+      }
+    } catch (e) {}
+  }
+
+  // 2. Multi-pattern parsing for human entered strings on Google Sheet
+  const p1: Record<string, string> = {};
+  const p2: Record<string, Record<string, string>> = {};
+  const p3: Record<string, string> = {};
+
+  // Part 2 pattern: 1aĐ, 1bS, 2a: Đúng...
+  const p2Regex = /(?:câu|c)?\s*(\d+)\s*[\.\:\-\s]?\s*([abcd])\s*[\.\:\-\s]?\s*([ĐđSsTtFf]|đúng|sai|true|false)/gi;
+  let m2;
+  while ((m2 = p2Regex.exec(str)) !== null) {
+    const qNum = m2[1];
+    const sub = m2[2].toLowerCase();
+    const val = (m2[3].toLowerCase() === 'đ' || m2[3].toLowerCase() === 'đúng' || m2[3].toLowerCase() === 't' || m2[3].toLowerCase() === 'true') ? 'Đ' : 'S';
+    if (!p2[qNum]) p2[qNum] = {};
+    p2[qNum][sub] = val;
+  }
+
+  // Part 3 pattern: C1: 15, 1: -3.5, Phần 3: 1=2024...
+  const p3Regex = /(?:phần\s*3|p3|câu|c)?\s*(\d+)\s*[\:\=]\s*([^\,\;\n\r\|]+)/gi;
+  let m3;
+  while ((m3 = p3Regex.exec(str)) !== null) {
+    const qNum3 = m3[1];
+    const val3 = m3[2].trim();
+    if (val3 && !/^[abcd]$/i.test(val3) && val3.length <= 20) {
+      p3[qNum3] = val3;
+    }
+  }
+
+  // Part 1 pattern: 1A, 2.B, 3-C, Câu 1: D...
+  const p1Regex = /(?:câu|c)?\s*(\d+)\s*[\.\:\-\s]?\s*([ABCDabcd])(?!\w)/g;
+  let m1;
+  while ((m1 = p1Regex.exec(str)) !== null) {
+    const qNum1 = m1[1];
+    const letter = m1[2].toUpperCase();
+    p1[qNum1] = letter;
+  }
+
+  // Fallback: Pure sequence of letters like "A B C D A B"
+  if (Object.keys(p1).length === 0 && Object.keys(p2).length === 0 && Object.keys(p3).length === 0) {
+    const tokens = str.replace(/[^A-Za-z]/g, ' ').trim().split(/\s+/);
+    if (tokens.length > 0 && tokens.every((t) => t.length === 1 && /^[A-Da-d]$/.test(t))) {
+      tokens.forEach((tok, idx) => {
+        p1[String(idx + 1)] = tok.toUpperCase();
+      });
+    }
+  }
+
+  return { p1, p2, p3 };
+}
+
 // Function to fetch and sync store with Google Apps Script cloud data
 export async function syncStoreWithGAS(): Promise<boolean> {
   try {
@@ -52,9 +129,15 @@ export async function syncStoreWithGAS(): Promise<boolean> {
         data.exams.forEach((gEx: any) => {
           if (gEx && gEx.id) {
             const existing = examMap.get(gEx.id);
+            const parsedAnswers = parseAnswersFlexibly(gEx.answers);
+            const hasParsedAnswers =
+              (parsedAnswers.p1 && Object.keys(parsedAnswers.p1).length > 0) ||
+              (parsedAnswers.p2 && Object.keys(parsedAnswers.p2).length > 0) ||
+              (parsedAnswers.p3 && Object.keys(parsedAnswers.p3).length > 0);
+
             examMap.set(gEx.id, {
               ...gEx,
-              answers: gEx.answers || existing?.answers || { p1: {}, p2: {}, p3: {} },
+              answers: hasParsedAnswers ? parsedAnswers : (existing?.answers || { p1: {}, p2: {}, p3: {} }),
             });
           }
         });
@@ -695,6 +778,33 @@ app.post('/api/exams/save', requireTeacherAuth, async (req, res) => {
           }
         });
         store.classes = Array.from(classSet);
+      }
+
+      // Automatically re-score all student submissions for this exam with the updated answer key!
+      if (exam.answers) {
+        let regradedCount = 0;
+        store.history = store.history.map((sub: any) => {
+          if (sub.examTitle === exam.title || sub.examId === exam.id) {
+            const regraded = gradeSubmissionAuthoritatively(
+              exam,
+              sub.details || {},
+              Number(parseInt(sub.cheat, 10)) || 0,
+              { username: sub.username, name: sub.name, group: sub.group }
+            );
+            regradedCount++;
+            return {
+              ...sub,
+              examId: exam.id,
+              score: regraded.score,
+              correct: regraded.correct,
+              correctAnswers: regraded.correctAnswers,
+            };
+          }
+          return sub;
+        });
+        if (regradedCount > 0) {
+          console.log(`[RE-GRADE] Authoritatively re-graded ${regradedCount} student submissions for updated exam "${exam.title}"`);
+        }
       }
 
       return exam;
