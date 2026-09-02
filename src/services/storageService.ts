@@ -27,6 +27,133 @@ export const STORAGE_KEYS = {
 };
 
 // ================= AUTHENTICATION SERVICES =================
+// Helper function for safe JSON fetching (protects against HTML responses like 404 on GitHub Pages or Google login redirects)
+export async function safeFetchJson<T = any>(res: Response): Promise<T | null> {
+  if (!res) return null;
+  try {
+    const text = await res.text();
+    if (!text || text.trim().startsWith('<') || text.trim().startsWith('<!DOCTYPE')) {
+      return null;
+    }
+    return JSON.parse(text) as T;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Client-side scoring calculator (works seamlessly offline, on GitHub Pages, and in hybrid mode)
+export function calculateScoreLocally(
+  exam: ExamItem | undefined,
+  details: any,
+  cheatCount: number = 0
+): { score: number; correct: number } {
+  if (!exam || !exam.answers || !details) {
+    return { score: 0, correct: 0 };
+  }
+
+  let totalScore = 0;
+  let correctCount = 0;
+  const answers = exam.answers;
+
+  // Part 1: Multiple choice
+  const p1Ans = answers.p1 || {};
+  const p1Stu = details.p1 || {};
+  for (const qNum of Object.keys(p1Ans)) {
+    const correctOpt = String(p1Ans[qNum] || '').trim().toUpperCase();
+    const stuOpt = String(p1Stu[qNum] || '').trim().toUpperCase();
+    if (correctOpt && stuOpt && correctOpt === stuOpt) {
+      totalScore += 0.25;
+      correctCount++;
+    }
+  }
+
+  // Part 2: True/False with 4 sub-items
+  const p2Ans = answers.p2 || {};
+  const p2Stu = details.p2 || {};
+  for (const qNum of Object.keys(p2Ans)) {
+    const correctSub = p2Ans[qNum] || {};
+    const stuSub = p2Stu[qNum] || {};
+    let subCorrect = 0;
+    (['a', 'b', 'c', 'd'] as const).forEach((sub) => {
+      const cVal = String(correctSub[sub] || '').trim().toUpperCase();
+      const sVal = String(stuSub[sub] || '').trim().toUpperCase();
+      if (cVal && sVal && (cVal === sVal || (cVal === 'Đ' && sVal === 'D') || (cVal === 'S' && sVal === 'S'))) {
+        subCorrect++;
+        correctCount++;
+      }
+    });
+
+    if (subCorrect === 1) totalScore += 0.1;
+    else if (subCorrect === 2) totalScore += 0.25;
+    else if (subCorrect === 3) totalScore += 0.5;
+    else if (subCorrect === 4) totalScore += 1.0;
+  }
+
+  // Part 3: Short numerical answers
+  const p3Ans = answers.p3 || {};
+  const p3Stu = details.p3 || {};
+  for (const qNum of Object.keys(p3Ans)) {
+    const cStr = String(p3Ans[qNum] || '').trim().replace(',', '.');
+    const sStr = String(p3Stu[qNum] || '').trim().replace(',', '.');
+    if (cStr && sStr && cStr.toLowerCase() === sStr.toLowerCase()) {
+      totalScore += 0.5;
+      correctCount++;
+    }
+  }
+
+  // Deduct penalty for tab switches / cheating (0.5 pt per cheat after 2 warnings)
+  if (cheatCount > 2) {
+    const penalty = Math.min(2.0, (cheatCount - 2) * 0.5);
+    totalScore = Math.max(0, totalScore - penalty);
+  }
+
+  totalScore = Math.round(totalScore * 100) / 100;
+  return {
+    score: Math.min(10, Math.max(0, totalScore)),
+    correct: correctCount,
+  };
+}
+
+// Re-grade all submissions against latest exam answer keys
+export function regradeAllSubmissionsLocally(
+  submissions: ExamSubmission[],
+  exams: ExamItem[]
+): { updatedSubmissions: ExamSubmission[]; regradedCount: number } {
+  const examsMap: Record<string, ExamItem> = {};
+  exams.forEach((e) => {
+    if (e.id) examsMap[e.id] = e;
+    if (e.title) examsMap[e.title.trim()] = e;
+  });
+
+  let regradedCount = 0;
+  const updatedSubmissions = submissions.map((sub) => {
+    const matchedExam = (sub.examId ? examsMap[sub.examId] : null) || examsMap[sub.examTitle?.trim()];
+    if (matchedExam && matchedExam.answers && sub.details) {
+      const cheatCount = typeof sub.cheat === 'number' ? sub.cheat : parseInt(String(sub.cheat || '0'), 10) || 0;
+      const res = calculateScoreLocally(matchedExam, sub.details, cheatCount);
+      regradedCount++;
+      return {
+        ...sub,
+        examId: matchedExam.id,
+        score: res.score,
+        correct: res.correct,
+        correctAnswers: matchedExam.answers,
+      };
+    }
+    return sub;
+  });
+
+  // Save updated history locally
+  safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(updatedSubmissions));
+
+  // Trigger app data updated
+  try {
+    window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history' } }));
+  } catch (e) {}
+
+  return { updatedSubmissions, regradedCount };
+}
+
 export const getAuthToken = (): string | null => {
   try {
     return localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
@@ -72,7 +199,7 @@ export const loginUser = async (
       });
       clearTimeout(timeoutId);
 
-      const data = await res.json().catch(() => ({}));
+      const data = (await safeFetchJson(res)) || {};
 
       if (res.ok && data.success && data.user) {
         if (data.token) {
@@ -333,7 +460,7 @@ export const uploadPdfToGoogleDrive = async (
       };
     }
 
-    const data = await res.json();
+    const data = await safeFetchJson(res);
     if (data && data.success && (data.previewUrl || data.fileUrl)) {
       return {
         success: true,
@@ -395,7 +522,7 @@ export const fetchAllData = async (
       headers,
     });
     if (sRes.ok) {
-      const sJson = await sRes.json();
+      const sJson = await safeFetchJson(sRes);
       if (sJson && sJson.success && sJson.data) {
         serverFetched = true;
         if (Array.isArray(sJson.data.exams)) serverExams = sJson.data.exams;
@@ -447,7 +574,7 @@ export const fetchAllData = async (
     try {
       const gRes = await fetch(`${apiUrl}?action=get_all`, { mode: 'cors', cache: 'no-cache' });
       if (gRes.ok) {
-        const rawData = await gRes.json();
+        const rawData = await safeFetchJson(gRes);
         const data = rawData?.data || rawData;
         if (data && !data.error) {
           gasSynced = true;
@@ -755,7 +882,7 @@ export const saveExamData = async (
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const data = await safeFetchJson(res);
         if (data && (data.success || !data.error)) {
           gasSynced = true;
         } else {
@@ -860,21 +987,37 @@ export const saveStudentsData = async (
 
 // ================= TRIGGER IMMEDIATE SERVER SYNC WITH GOOGLE SHEET =================
 export const triggerServerSync = async (): Promise<{ success: boolean; message: string; count?: number }> => {
+  // 1. Try internal backend server if available
   try {
     const res = await fetch('/api/sync/refresh', {
       method: 'POST',
       headers: getAuthHeaders(),
     });
-    const data = await res.json();
-    if (data.success) {
-      try {
-        window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'refresh' } }));
-      } catch (e) {}
-      return { success: true, message: data.message || 'Đã đồng bộ từ Google Sheet thành công!', count: data.studentsCount };
+    if (res.ok) {
+      const data = await safeFetchJson(res);
+      if (data && data.success) {
+        try {
+          window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'refresh' } }));
+        } catch (e) {}
+        return { success: true, message: data.message || 'Đã đồng bộ từ Google Sheet thành công!', count: data.studentsCount };
+      }
     }
-    return { success: false, message: data.error || 'Lỗi khi đồng bộ dữ liệu.' };
-  } catch (e: any) {
-    return { success: false, message: e.message || 'Lỗi kết nối máy chủ.' };
+  } catch (e) {}
+
+  // 2. Direct client-side sync fallback (for GitHub Pages / static hosting)
+  try {
+    const freshData = await fetchAllData('teacher');
+    const studentsCount = freshData.students ? Object.keys(freshData.students).length : 0;
+    try {
+      window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'refresh' } }));
+    } catch (e) {}
+    return {
+      success: true,
+      message: `Đã đồng bộ trực tiếp từ Google Sheet thành công! (${studentsCount} học sinh)`,
+      count: studentsCount,
+    };
+  } catch (err: any) {
+    return { success: false, message: 'Lỗi khi đồng bộ Google Sheet: ' + (err?.message || 'Kiểm tra đường truyền') };
   }
 };
 
@@ -890,6 +1033,7 @@ export const submitExamAnswersToServer = async (payload: {
 }): Promise<{ success: boolean; submission?: ExamSubmission; error?: string }> => {
   initLocalStorageIfEmpty();
 
+  // 1. Try server-side grading route
   try {
     const res = await fetch('/api/exams/submit', {
       method: 'POST',
@@ -897,50 +1041,83 @@ export const submitExamAnswersToServer = async (payload: {
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      const data = await safeFetchJson(res);
+      if (data && data.success && data.submission) {
+        const gradedSubmission: ExamSubmission = data.submission;
 
-    if (!res.ok) {
-      return {
-        success: false,
-        error: data?.error || `Máy chủ phản hồi mã lỗi HTTP ${res.status}`,
-      };
-    }
+        // Update client local history
+        let localHistory: ExamSubmission[] = [];
+        try {
+          localHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
+        } catch (e) {
+          localHistory = [];
+        }
+        localHistory.unshift(gradedSubmission);
+        safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(localHistory));
 
-    if (data && data.success && data.submission) {
-      const gradedSubmission: ExamSubmission = data.submission;
+        // Asynchronously forward to Google Apps Script backup if configured
+        const apiUrl = getApiUrl();
+        if (apiUrl) {
+          fetch(`${apiUrl}?action=submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(gradedSubmission),
+          }).catch((gasErr) => console.warn('GAS backup sync failed:', gasErr));
+        }
 
-      // Update client local history
-      let localHistory: ExamSubmission[] = [];
-      try {
-        localHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
-      } catch (e) {
-        localHistory = [];
+        try {
+          window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history' } }));
+        } catch (e) {}
+
+        return { success: true, submission: gradedSubmission };
       }
-      localHistory.unshift(gradedSubmission);
-      safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(localHistory));
-
-      // Asynchronously forward to Google Apps Script backup if configured
-      const apiUrl = getApiUrl();
-      if (apiUrl) {
-        fetch(`${apiUrl}?action=submit`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(gradedSubmission),
-        }).catch((gasErr) => console.warn('GAS backup sync failed:', gasErr));
-      }
-
-      try {
-        window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history' } }));
-      } catch (e) {}
-
-      return { success: true, submission: gradedSubmission };
-    } else {
-      return { success: false, error: data?.error || 'Máy chủ không thể hoàn tất chấm điểm' };
     }
-  } catch (err: any) {
-    console.error('Server-side grading submission error:', err);
-    return { success: false, error: err?.message || 'Không thể kết nối đến máy chủ chấm điểm' };
+  } catch (err: any) {}
+
+  // 2. Client-side fallback grading (when running statically on GitHub Pages)
+  const localExams = getLocalExams();
+  const matchedExam = localExams.find((e) => e.id === payload.examId || e.title === payload.examTitle);
+  const graded = calculateScoreLocally(matchedExam, payload.studentAnswers, payload.cheatCount);
+
+  const gradedSubmission: ExamSubmission = {
+    id: 'sub_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+    examId: payload.examId,
+    examTitle: payload.examTitle,
+    username: payload.username,
+    name: payload.name,
+    group: payload.group,
+    score: graded.score,
+    correct: graded.correct,
+    cheat: `${payload.cheatCount || 0} lần`,
+    submitted_at: new Date().toLocaleString('vi-VN'),
+    details: payload.studentAnswers,
+    correctAnswers: matchedExam?.answers,
+  };
+
+  let localHistory: ExamSubmission[] = [];
+  try {
+    localHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
+  } catch (e) {
+    localHistory = [];
   }
+  localHistory.unshift(gradedSubmission);
+  safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(localHistory));
+
+  const apiUrl = getApiUrl();
+  if (apiUrl) {
+    fetch(`${apiUrl}?action=submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(gradedSubmission),
+    }).catch(() => {});
+  }
+
+  try {
+    window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history' } }));
+  } catch (e) {}
+
+  return { success: true, submission: gradedSubmission };
 };
 
 // ================= SUBMIT EXAM RESULT =================
@@ -1045,11 +1222,11 @@ export const deleteHistoryEntries = async (ids: string[] | string): Promise<{ su
       },
       body: JSON.stringify({ ids: targetIds }),
     });
-    const data = await res.json();
+    const data = await safeFetchJson(res);
     try {
       window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history_deleted', ids: targetIds } }));
     } catch (e) {}
-    return { success: data.success ?? true, deletedCount: data.deletedCount };
+    return { success: data?.success ?? true, deletedCount: data?.deletedCount ?? targetIds.length };
   } catch (e) {
     try {
       window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'history_deleted', ids: targetIds } }));

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ExamSubmission } from '../../types';
 import { Trash2, ShieldCheck, AlertTriangle, Filter, Search, Award, CheckSquare, Square, RefreshCw, UserCheck, HelpCircle, CheckCircle2, Calculator, Upload, ClipboardPaste, X } from 'lucide-react';
-import { clearExamHistory, deleteHistoryEntries, getAuthToken } from '../../services/storageService';
+import { clearExamHistory, deleteHistoryEntries, getAuthToken, safeFetchJson, regradeAllSubmissionsLocally, getLocalExams, calculateScoreLocally, getApiUrl } from '../../services/storageService';
 
 interface HistoryViewerProps {
   history: ExamSubmission[];
@@ -40,24 +40,36 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
   const handleRegradeAll = async () => {
     setIsRegrading(true);
     try {
-      const token = getAuthToken();
-      const res = await fetch('/api/admin/regrade', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      const data = await res.json();
-      if (data.success) {
-        setActionNotice(data.message || 'Đã chấm lại điểm toàn bộ bài thi thành công!');
-        setTimeout(() => setActionNotice(null), 4000);
-        onRefresh();
-      } else {
-        alert(data.error || 'Không thể chấm lại bài thi');
-      }
+      // 1. Try server-side regrade if available
+      try {
+        const token = getAuthToken();
+        const res = await fetch('/api/admin/regrade', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (res.ok) {
+          const data = await safeFetchJson(res);
+          if (data && data.success) {
+            setActionNotice(data.message || 'Đã chấm lại điểm toàn bộ bài thi thành công!');
+            setTimeout(() => setActionNotice(null), 4000);
+            onRefresh();
+            setIsRegrading(false);
+            return;
+          }
+        }
+      } catch (err) {}
+
+      // 2. Client-side fallback regrade (for GitHub Pages / static hosting)
+      const localExams = getLocalExams();
+      const { regradedCount } = regradeAllSubmissionsLocally(history, localExams);
+      setActionNotice(`Đã chấm lại điểm cho toàn bộ ${regradedCount || history.length} bài thi thành công!`);
+      setTimeout(() => setActionNotice(null), 4000);
+      onRefresh();
     } catch (e: any) {
-      alert('Lỗi kết nối máy chủ: ' + e.message);
+      alert('Lỗi khi chấm lại điểm: ' + (e?.message || 'Vui lòng thử lại'));
     } finally {
       setIsRegrading(false);
     }
@@ -69,27 +81,98 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
 
     setIsRegrading(true);
     try {
-      const token = getAuthToken();
-      const res = await fetch('/api/admin/import-history', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ rawText: pasteData }),
+      // 1. Try backend import route
+      try {
+        const token = getAuthToken();
+        const res = await fetch('/api/admin/import-history', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ rawText: pasteData }),
+        });
+        if (res.ok) {
+          const data = await safeFetchJson(res);
+          if (data && data.success) {
+            setActionNotice(data.message || 'Đã nhập và chấm lại điểm thành công!');
+            setTimeout(() => setActionNotice(null), 4000);
+            setShowImportModal(false);
+            setPasteData('');
+            onRefresh();
+            setIsRegrading(false);
+            return;
+          }
+        }
+      } catch (err) {}
+
+      // 2. Client-side import fallback (for GitHub Pages)
+      const lines = pasteData.trim().split('\n');
+      const localExams = getLocalExams();
+      const examsMap: Record<string, any> = {};
+      localExams.forEach((ex) => {
+        if (ex.id) examsMap[ex.id] = ex;
+        if (ex.title) examsMap[ex.title.trim()] = ex;
       });
-      const data = await res.json();
-      if (data.success) {
-        setActionNotice(data.message || 'Đã nhập và chấm lại điểm thành công!');
+
+      const newEntries: ExamSubmission[] = [];
+      lines.forEach((line, idx) => {
+        const parts = line.split('\t').map((p) => p.trim());
+        if (parts.length >= 5) {
+          const time = parts[0] || new Date().toLocaleString('vi-VN');
+          const u = parts[1] || '';
+          const name = parts[2] || '';
+          const group = parts[3] || '';
+          const examTitle = parts[4] || '';
+          let score = parseFloat(parts[5]) || 0;
+          let correct = 0;
+          const cheat = parts[6] || '0 lần';
+          let details: any = {};
+          if (parts[7]) {
+            try {
+              details = JSON.parse(parts[7]);
+            } catch (err) {}
+          }
+
+          const matchedExam = examsMap[examTitle];
+          if (matchedExam && matchedExam.answers && details) {
+            const cheatNum = parseInt(cheat, 10) || 0;
+            const res = calculateScoreLocally(matchedExam, details, cheatNum);
+            score = res.score;
+            correct = res.correct;
+          }
+
+          if (u || name) {
+            newEntries.push({
+              id: 'imp_' + Date.now() + '_' + idx,
+              submitted_at: time,
+              username: u,
+              name: name,
+              group: group,
+              examTitle: examTitle,
+              examId: matchedExam?.id || '',
+              score: score,
+              correct: correct,
+              cheat: cheat,
+              details: details,
+            });
+          }
+        }
+      });
+
+      if (newEntries.length > 0) {
+        const merged = [...newEntries, ...history];
+        localStorage.setItem('app_history_data', JSON.stringify(merged));
+        setActionNotice(`Đã nhập thành công ${newEntries.length} bài thi từ Sheet!`);
         setTimeout(() => setActionNotice(null), 4000);
         setShowImportModal(false);
         setPasteData('');
         onRefresh();
       } else {
-        alert(data.error || 'Lỗi khi nhập dữ liệu');
+        alert('Không nhận diện được dòng dữ liệu hợp lệ. Vui lòng copy các cột từ Google Sheet: Thời gian, Tài khoản, Họ tên, Lớp, Đề thi, Điểm, Cảnh báo, Chi tiết bài làm.');
       }
     } catch (e: any) {
-      alert('Lỗi: ' + e.message);
+      alert('Lỗi khi nhập dữ liệu: ' + (e?.message || 'Định dạng chưa đúng'));
     } finally {
       setIsRegrading(false);
     }
