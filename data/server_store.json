@@ -434,37 +434,37 @@
     "thaovy12b": {
       "username": "thaovy12b",
       "name": "thaovy12b",
-      "password": "123",
+      "password": "thaovy",
       "group": "12B"
     },
     "hs_5": {
       "username": "hs_5",
-      "password": "123",
       "name": "Học sinh 5",
+      "password": "123",
       "group": "12A1"
     },
     "hs_4": {
       "username": "hs_4",
-      "password": "123",
       "name": "Học sinh 4",
+      "password": "123",
       "group": "12A1"
     },
     "hs_3": {
       "username": "hs_3",
-      "password": "123",
       "name": "Học sinh 3",
+      "password": "123",
       "group": "12A1"
     },
     "hs_2": {
       "username": "hs_2",
-      "password": "123",
       "name": "Học sinh 2",
+      "password": "123",
       "group": "12A1"
     },
     "hs_1": {
       "username": "hs_1",
-      "password": "123",
       "name": "Học sinh 1",
+      "password": "123",
       "group": "12A1"
     }
   },
@@ -5062,5 +5062,5 @@
     "12G3",
     "11A"
   ],
-  "lastUpdated": 1788347899884
+  "lastUpdated": 1788349153945
 }

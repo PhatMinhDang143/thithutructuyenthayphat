@@ -15,6 +15,24 @@ initDatabase();
 
 const GAS_API_URL = process.env.VITE_GAS_API_URL || "https://script.google.com/macros/s/AKfycby3mDVDZAlmuPoP2fXwJNyQXL5kdmWgqhoEu0FPMhYf9lwj1eqNwSVSGkVzA5d2YKAP/exec";
 
+// Helper to push actions asynchronously to Google Apps Script / Google Sheet
+export async function pushToGAS(action: string, payload: any): Promise<boolean> {
+  if (!GAS_API_URL) return false;
+  try {
+    const res = await fetch(GAS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const result = await res.json().catch(() => null);
+    console.log(`[SERVER PUSH TO GAS] Action "${action}" completed. Result:`, result);
+    return true;
+  } catch (e) {
+    console.warn(`[SERVER PUSH TO GAS] Action "${action}" error:`, e);
+    return false;
+  }
+}
+
 // Function to fetch and sync store with Google Apps Script cloud data
 export async function syncStoreWithGAS(): Promise<boolean> {
   try {
@@ -43,10 +61,12 @@ export async function syncStoreWithGAS(): Promise<boolean> {
         store.exams = Array.from(examMap.values());
       }
 
-      // 2. Sync Students (Respect sheet passwords)
+      // 2. Sync Students (Authoritative 2-way sync with Google Sheet)
       if (data.students && typeof data.students === 'object') {
         const rawSt = data.students;
         const studentEntries = Array.isArray(rawSt) ? rawSt : Object.values(rawSt);
+        const newStudentsObj: Record<string, any> = {};
+
         studentEntries.forEach((s: any) => {
           if (!s) return;
           const u = String(s.username || s.sbd || s.id || s.ma_hs || '').trim();
@@ -64,7 +84,7 @@ export async function syncStoreWithGAS(): Promise<boolean> {
               p = temp;
             }
 
-            store.students[u.toLowerCase()] = {
+            newStudentsObj[u.toLowerCase()] = {
               username: u,
               name: n,
               password: p,
@@ -72,6 +92,19 @@ export async function syncStoreWithGAS(): Promise<boolean> {
             };
           }
         });
+
+        if (Object.keys(newStudentsObj).length > 0) {
+          store.students = newStudentsObj;
+
+          // Re-calculate active classes
+          const classSet = new Set(store.classes);
+          Object.values(newStudentsObj).forEach((s: any) => {
+            if (s.group && s.group !== 'Chưa phân lớp') {
+              classSet.add(s.group);
+            }
+          });
+          store.classes = Array.from(classSet);
+        }
       }
 
       // 3. Sync History
@@ -667,13 +700,16 @@ app.post('/api/exams/save', requireTeacherAuth, async (req, res) => {
       return exam;
     });
 
+    // 2-way sync: Push to Google Sheet
+    pushToGAS('save_exam', updatedExam);
+
     console.log(`[SERVER SYNC] Exam saved: ${updatedExam.title} (ID: ${updatedExam.id}) by Teacher ${(req as any).user?.username}`);
 
     res.json({
       success: true,
       exam: updatedExam,
       lastUpdated: getStore().lastUpdated,
-      message: 'Đã lưu và đồng bộ đề thi tới toàn bộ hệ thống!',
+      message: 'Đã lưu và đồng bộ đề thi tới toàn bộ hệ thống & Google Sheet!',
     });
   } catch (err: any) {
     console.error('Save exam error:', err);
@@ -693,15 +729,18 @@ app.post('/api/exams/delete', requireTeacherAuth, async (req, res) => {
       store.exams = store.exams.filter((e) => e.id !== id);
     });
 
+    // 2-way sync: Delete from Google Sheet
+    pushToGAS('delete_exam', { id });
+
     console.log(`[SERVER SYNC] Exam deleted: ID ${id} by Teacher ${(req as any).user?.username}`);
 
-    res.json({ success: true, message: 'Đã xóa đề thi khỏi hệ thống!' });
+    res.json({ success: true, message: 'Đã xóa đề thi khỏi hệ thống & Google Sheet!' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || 'Lỗi xóa đề thi' });
   }
 });
 
-// 8. Save students (PROTECTED: Teacher Authentication Required + Transactional)
+// 8. Save students (PROTECTED: Teacher Authentication Required + Transactional + 2-Way Sync to Sheet)
 app.post('/api/students/save', requireTeacherAuth, async (req, res) => {
   try {
     const { students } = req.body;
@@ -710,10 +749,11 @@ app.post('/api/students/save', requireTeacherAuth, async (req, res) => {
     }
 
     await executeTransaction(async (store) => {
-      store.students = { ...store.students, ...students };
+      // Overwrite with current teacher-provided roster
+      store.students = students;
 
       // Update classes
-      const classSet = new Set(store.classes);
+      const classSet = new Set<string>();
       Object.values(students).forEach((s: any) => {
         if (s?.group && s.group.trim()) {
           classSet.add(s.group.trim());
@@ -722,10 +762,31 @@ app.post('/api/students/save', requireTeacherAuth, async (req, res) => {
       store.classes = Array.from(classSet);
     });
 
+    // 2-way sync: Push to Google Sheet immediately via GAS
+    pushToGAS('save_students', { students });
+
     console.log(`[SERVER SYNC] Students saved by Teacher ${(req as any).user?.username}`);
-    res.json({ success: true, message: 'Đã lưu danh sách học sinh!' });
+    res.json({ success: true, message: 'Đã lưu và đồng bộ danh sách học sinh vào Google Sheet & Server!' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err?.message || 'Lỗi lưu học sinh' });
+  }
+});
+
+// 8.1 Force Immediate Refresh / Pull from Google Apps Script
+app.post('/api/sync/refresh', async (req, res) => {
+  try {
+    const ok = await syncStoreWithGAS();
+    const currentStore = getStore();
+    res.json({
+      success: ok,
+      studentsCount: Object.keys(currentStore.students).length,
+      examsCount: currentStore.exams.length,
+      historyCount: currentStore.history.length,
+      classes: currentStore.classes,
+      message: ok ? 'Đã kéo dữ liệu mới nhất từ Google Sheet thành công!' : 'Đồng bộ Google Sheet thất bại.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Lỗi làm mới dữ liệu' });
   }
 });
 

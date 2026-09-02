@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StudentAccount } from '../../types';
-import { UserPlus, Save, Trash2, Loader2, Users, Layers, Filter, Plus, ShieldCheck } from 'lucide-react';
-import { saveStudentsData } from '../../services/storageService';
+import { UserPlus, Save, Trash2, Loader2, Users, Layers, Filter, Plus, ShieldCheck, RefreshCw, CheckCircle2, FileSpreadsheet } from 'lucide-react';
+import { saveStudentsData, triggerServerSync } from '../../services/storageService';
 
 interface StudentsManagerProps {
   students: { [username: string]: StudentAccount };
@@ -18,6 +18,8 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('Tất cả');
   const [newClassName, setNewClassName] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   useEffect(() => {
     const list = (Object.entries(students) as [string, StudentAccount][]).map(([username, data]) => {
@@ -87,12 +89,31 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
 
     const res = await saveStudentsData(obj);
     if (res.success) {
-      alert('Đã cập nhật danh sách học viên & lớp học thành công!');
+      setSyncStatus('Đã lưu & đồng bộ thành công vào Google Sheet & Web!');
+      setTimeout(() => setSyncStatus(null), 4000);
       onRefresh();
     } else {
       alert('Lỗi: ' + (res.message || 'Không thể lưu học sinh.'));
     }
     setIsSaving(false);
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await triggerServerSync();
+      if (res.success) {
+        setSyncStatus(`Đã tải về ${res.count || studentList.length} học sinh từ Google Sheet!`);
+        setTimeout(() => setSyncStatus(null), 4000);
+        onRefresh();
+      } else {
+        alert(res.message);
+      }
+    } catch (e: any) {
+      alert('Lỗi khi đồng bộ: ' + (e?.message || 'Không thể kết nối'));
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Filter list by selected class
@@ -106,13 +127,32 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-6 border-b-2 border-[#111111] gap-4">
         <div>
-          <h2 className="text-xl md:text-2xl font-black uppercase text-[#111111]">Xác Thực & Phân Lớp Học Viên</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl md:text-2xl font-black uppercase text-[#111111]">Xác Thực & Phân Lớp Học Viên</h2>
+            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#48BB78]/20 text-[#2F855A] border border-[#2F855A] text-[11px] font-black uppercase rounded-full">
+              <RefreshCw className="w-3 h-3 animate-spin" style={{ animationDuration: '6s' }} /> Đồng Bộ 2 Chiều
+            </span>
+          </div>
           <p className="text-xs md:text-sm text-neutral-700 font-bold mt-0.5">
-            Quản lý tài khoản học sinh và gán trực tiếp vào từng lớp học cụ thể.
+            Quản lý tài khoản học sinh. Mọi thay đổi trên Web hoặc trên Google Sheet đều được đồng bộ tức thì.
           </p>
+          {syncStatus && (
+            <div className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 bg-[#48BB78] text-white text-xs font-black border-2 border-[#111111] shadow-[2px_2px_0px_#111111] animate-bounce">
+              <CheckCircle2 className="w-3.5 h-3.5" /> {syncStatus}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          <button
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            title="Kéo dữ liệu học sinh mới nhất từ Google Sheet về Web"
+            className="px-4 py-3 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 text-[#4D6BFE] ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Đang kéo Sheet...' : 'Đồng Bộ Từ Google Sheet'}
+          </button>
           <button
             onClick={handleAddRow}
             className="px-4 py-3 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all"
@@ -125,7 +165,7 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
             className="px-5 py-3 bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {isSaving ? 'Đang lưu...' : 'Lưu Tất Cả Thay Đổi'}
+            {isSaving ? 'Đang lưu...' : 'Lưu Tất Cả & Cập Nhật Sheet'}
           </button>
         </div>
       </div>

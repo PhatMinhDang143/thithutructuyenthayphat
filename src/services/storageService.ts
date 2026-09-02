@@ -574,7 +574,16 @@ export const fetchAllData = async (
     localStudents = {};
   }
 
-  const rawMerged = { ...localStudents, ...gasStudents, ...serverStudents };
+  // Authoritative priority: Server (which syncs with Sheet) > Google Apps Script > Local
+  let rawMerged: { [username: string]: any } = {};
+  if (Object.keys(serverStudents).length > 0) {
+    rawMerged = { ...serverStudents };
+  } else if (Object.keys(gasStudents).length > 0) {
+    rawMerged = { ...gasStudents };
+  } else {
+    rawMerged = { ...localStudents };
+  }
+
   const mergedStudents: { [username: string]: StudentAccount } = {};
   Object.entries(rawMerged).forEach(([k, s]) => {
     const norm = normalizeStudent(s, k);
@@ -845,8 +854,28 @@ export const saveStudentsData = async (
   return {
     success: true,
     cloudSynced: serverSynced || gasSynced,
-    message: 'Đã lưu và đồng bộ danh sách học sinh thành công!',
+    message: 'Đã lưu và đồng bộ danh sách học sinh vào Google Sheet & Server thành công!',
   };
+};
+
+// ================= TRIGGER IMMEDIATE SERVER SYNC WITH GOOGLE SHEET =================
+export const triggerServerSync = async (): Promise<{ success: boolean; message: string; count?: number }> => {
+  try {
+    const res = await fetch('/api/sync/refresh', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    const data = await res.json();
+    if (data.success) {
+      try {
+        window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'refresh' } }));
+      } catch (e) {}
+      return { success: true, message: data.message || 'Đã đồng bộ từ Google Sheet thành công!', count: data.studentsCount };
+    }
+    return { success: false, message: data.error || 'Lỗi khi đồng bộ dữ liệu.' };
+  } catch (e: any) {
+    return { success: false, message: e.message || 'Lỗi kết nối máy chủ.' };
+  }
 };
 
 // ================= AUTHORITATIVE SERVER-SIDE EXAM SUBMISSION =================
