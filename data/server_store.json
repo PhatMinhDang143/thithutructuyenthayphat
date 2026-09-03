@@ -317,7 +317,7 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
         }
       }
     }
@@ -523,9 +523,10 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
         }
-      }
+      },
+      "examId": "ex_1788200554524"
     },
     {
       "id": "sub_Ngoctuyet12B_210717062026",
@@ -1406,8 +1407,8 @@
       "name": "Ngọc Tuyết",
       "group": "",
       "examTitle": "Đề kiểm tra số 2",
-      "score": 8.89,
-      "correct": 9,
+      "score": 10.0,
+      "correct": 10,
       "cheat": "0 lần",
       "details": {
         "p1": {
@@ -1677,7 +1678,7 @@
       "name": "Ngân",
       "group": "",
       "examTitle": "Đề kiểm tra số 2",
-      "score": 5,
+      "score": 5.0,
       "correct": 6,
       "cheat": "3 lần",
       "details": {
@@ -1745,8 +1746,8 @@
       "name": "Công Vinh",
       "group": "",
       "examTitle": "Đề kiểm tra số 2",
-      "score": 5.56,
-      "correct": 6,
+      "score": 6.67,
+      "correct": 7,
       "cheat": "1 lần",
       "details": {
         "p1": {
@@ -2369,8 +2370,8 @@
       "name": "Hải Yến",
       "group": "11A",
       "examTitle": "Đề khảo sát Toán 11 lần 1",
-      "score": 7.05,
-      "correct": 26,
+      "score": 7.5,
+      "correct": 27,
       "cheat": "Đề khảo sát Toán 11 lần 1",
       "details": {
         "p1": {
@@ -2840,7 +2841,7 @@
       "name": "Ngọc Tuyết",
       "group": "12B",
       "examTitle": "Đề ôn tập C1,2 Toán 12",
-      "score": 0,
+      "score": 0.0,
       "correct": 0,
       "cheat": "0 lần",
       "details": {
@@ -3352,7 +3353,7 @@
       "name": "Nhựt Tân",
       "group": "12B",
       "examTitle": "Đề ôn tập C1,2 Toán 12",
-      "score": 6,
+      "score": 6.0,
       "correct": 13,
       "cheat": "2 lần",
       "details": {
@@ -3561,7 +3562,7 @@
       "name": "Ngọc Ý",
       "group": "12B",
       "examTitle": "Đề ôn tập C1,2 Toán 12",
-      "score": 0,
+      "score": 0.0,
       "correct": 0,
       "cheat": "0 lần",
       "details": {
@@ -3957,7 +3958,7 @@
       "name": "Khách 9965",
       "group": "Khách",
       "examTitle": "Đề ôn tập C1,2 Toán 12",
-      "score": 0,
+      "score": 0.0,
       "correct": 0,
       "cheat": "0 lần",
       "details": {
@@ -4024,8 +4025,8 @@
       "name": "Ngọc Tuyết",
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
-      "score": 9,
-      "correct": 32,
+      "score": 9.0,
+      "correct": 20,
       "cheat": "0 lần",
       "details": {
         "p1": {
@@ -4124,7 +4125,7 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
         }
       }
     },
@@ -4135,8 +4136,8 @@
       "name": "Đăng Khoa",
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
-      "score": 8.5,
-      "correct": 31,
+      "score": 9.0,
+      "correct": 20,
       "cheat": "4 lần",
       "details": {
         "p1": {
@@ -4236,7 +4237,7 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
         }
       }
     },
@@ -4247,8 +4248,8 @@
       "name": "Nhựt Tân",
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
-      "score": 9,
-      "correct": 32,
+      "score": 9.0,
+      "correct": 20,
       "cheat": "2 lần",
       "details": {
         "p1": {
@@ -4348,7 +4349,7 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
         }
       }
     },
@@ -4360,7 +4361,7 @@
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
       "score": 7.75,
-      "correct": 29,
+      "correct": 17,
       "cheat": "0 lần",
       "details": {
         "p1": {
@@ -4459,7 +4460,7 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
         }
       }
     },
@@ -4471,7 +4472,7 @@
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
       "score": 8.5,
-      "correct": 31,
+      "correct": 19,
       "cheat": "0 lần",
       "details": {
         "p1": {
@@ -4571,7 +4572,7 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
         }
       }
     },
@@ -4682,7 +4683,7 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
         }
       }
     },
@@ -4693,8 +4694,8 @@
       "name": "Ngân",
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
-      "score": 5,
-      "correct": 21,
+      "score": 5.0,
+      "correct": 10,
       "cheat": "6 lần",
       "details": {
         "p1": {
@@ -4794,7 +4795,7 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
         }
       }
     },
@@ -4806,7 +4807,7 @@
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
       "score": 5.5,
-      "correct": 23,
+      "correct": 12,
       "cheat": "1 lần",
       "details": {
         "p1": {
@@ -4906,7 +4907,7 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
         }
       }
     },
@@ -4918,7 +4919,7 @@
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
       "score": 7.5,
-      "correct": 28,
+      "correct": 16,
       "cheat": "4 lần",
       "details": {
         "p1": {
@@ -5016,7 +5017,119 @@
           "3": "240",
           "4": "333",
           "5": "7",
-          "6": "117"
+          "6": "114"
+        }
+      }
+    },
+    {
+      "id": "sub_ngocanh12b_192502092026",
+      "submitted_at": "19:25 02/09/2026",
+      "username": "ngocanh12b",
+      "name": "Ngọc Ánh",
+      "group": "12B",
+      "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
+      "score": 8.25,
+      "correct": 18,
+      "cheat": "0 lần",
+      "details": {
+        "p1": {
+          "1": "C",
+          "2": "B",
+          "3": "A",
+          "4": "C",
+          "5": "D",
+          "6": "A",
+          "7": "D",
+          "8": "D",
+          "9": "B",
+          "10": "D",
+          "11": "C",
+          "12": "B"
+        },
+        "p2": {
+          "1": {
+            "a": "Đ",
+            "c": "Đ",
+            "b": "S",
+            "d": "Đ"
+          },
+          "2": {
+            "a": "S",
+            "c": "Đ",
+            "d": "Đ",
+            "b": "Đ"
+          },
+          "3": {
+            "a": "Đ",
+            "b": "Đ",
+            "d": "S",
+            "c": "S"
+          },
+          "4": {
+            "a": "Đ",
+            "c": "Đ",
+            "b": "S",
+            "d": "S"
+          }
+        },
+        "p3": {
+          "1": "105",
+          "2": "-98",
+          "3": "120",
+          "4": "333",
+          "5": "7",
+          "6": "114"
+        }
+      },
+      "examId": "ex_1788200554524",
+      "correctAnswers": {
+        "p1": {
+          "1": "C",
+          "2": "B",
+          "3": "A",
+          "4": "C",
+          "5": "D",
+          "6": "A",
+          "7": "D",
+          "8": "D",
+          "9": "D",
+          "10": "D",
+          "11": "C",
+          "12": "B"
+        },
+        "p2": {
+          "1": {
+            "a": "Đ",
+            "b": "S",
+            "c": "Đ",
+            "d": "Đ"
+          },
+          "2": {
+            "a": "S",
+            "b": "Đ",
+            "c": "S",
+            "d": "Đ"
+          },
+          "3": {
+            "a": "Đ",
+            "b": "Đ",
+            "c": "S",
+            "d": "S"
+          },
+          "4": {
+            "a": "Đ",
+            "b": "S",
+            "c": "Đ",
+            "d": "Đ"
+          }
+        },
+        "p3": {
+          "1": "105",
+          "2": "-98",
+          "3": "240",
+          "4": "333",
+          "5": "7",
+          "6": "114"
         }
       }
     }
@@ -5032,5 +5145,5 @@
     "12B",
     "12G3"
   ],
-  "lastUpdated": 1788349764422
+  "lastUpdated": 1788405093270
 }

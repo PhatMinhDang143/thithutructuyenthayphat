@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ExamSubmission } from '../../types';
 import { Trash2, ShieldCheck, AlertTriangle, Filter, Search, Award, CheckSquare, Square, RefreshCw, UserCheck, HelpCircle, CheckCircle2, Calculator, Upload, ClipboardPaste, X } from 'lucide-react';
-import { clearExamHistory, deleteHistoryEntries, getAuthToken, safeFetchJson, regradeAllSubmissionsLocally, getLocalExams, calculateScoreLocally, getApiUrl } from '../../services/storageService';
+import { clearExamHistory, deleteHistoryEntries, getAuthToken, safeFetchJson, regradeAllSubmissionsLocally, getLocalExams, calculateScoreLocally, getApiUrl, safeSetItem, STORAGE_KEYS } from '../../services/storageService';
 
 interface HistoryViewerProps {
   history: ExamSubmission[];
@@ -40,7 +40,11 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
   const handleRegradeAll = async () => {
     setIsRegrading(true);
     try {
-      // 1. Try server-side regrade if available
+      // 1. Always execute local regrade first so UI is immediately updated
+      const localExams = getLocalExams();
+      const { updatedSubmissions, regradedCount: localCount } = regradeAllSubmissionsLocally(history, localExams);
+
+      // 2. Try server-side authoritative regrade
       try {
         const token = getAuthToken();
         const res = await fetch('/api/admin/regrade', {
@@ -53,7 +57,10 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
         if (res.ok) {
           const data = await safeFetchJson(res);
           if (data && data.success) {
-            setActionNotice(data.message || 'Đã chấm lại điểm toàn bộ bài thi thành công!');
+            if (Array.isArray(data.history) && data.history.length > 0) {
+              safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(data.history));
+            }
+            setActionNotice(data.message || `Đã chấm lại điểm cho ${data.regradedCount ?? localCount} bài thi theo đáp án mới nhất!`);
             setTimeout(() => setActionNotice(null), 4000);
             onRefresh();
             setIsRegrading(false);
@@ -62,10 +69,8 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
         }
       } catch (err) {}
 
-      // 2. Client-side fallback regrade (for GitHub Pages / static hosting)
-      const localExams = getLocalExams();
-      const { regradedCount } = regradeAllSubmissionsLocally(history, localExams);
-      setActionNotice(`Đã chấm lại điểm cho toàn bộ ${regradedCount || history.length} bài thi thành công!`);
+      // Fallback notification if server is offline/static
+      setActionNotice(`Đã chấm lại điểm cho ${localCount || history.length} bài thi thành công theo đáp án mới nhất!`);
       setTimeout(() => setActionNotice(null), 4000);
       onRefresh();
     } catch (e: any) {

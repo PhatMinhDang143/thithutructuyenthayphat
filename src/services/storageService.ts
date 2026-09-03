@@ -51,65 +51,144 @@ export function calculateScoreLocally(
     return { score: 0, correct: 0 };
   }
 
-  let totalScore = 0;
-  let correctCount = 0;
-  const answers = exam.answers;
-
-  // Part 1: Multiple choice
-  const p1Ans = answers.p1 || {};
-  const p1Stu = details.p1 || {};
-  for (const qNum of Object.keys(p1Ans)) {
-    const correctOpt = String(p1Ans[qNum] || '').trim().toUpperCase();
-    const stuOpt = String(p1Stu[qNum] || '').trim().toUpperCase();
-    if (correctOpt && stuOpt && correctOpt === stuOpt) {
-      totalScore += 0.25;
-      correctCount++;
+  let sAns = details;
+  if (typeof sAns === 'string') {
+    try {
+      sAns = JSON.parse(sAns);
+    } catch (e) {
+      sAns = { p1: {}, p2: {}, p3: {} };
     }
   }
 
-  // Part 2: True/False with 4 sub-items
+  const cfg = exam.questions || {};
+  const answers = exam.answers || { p1: {}, p2: {}, p3: {} };
+
+  const p1Ans = answers.p1 || {};
   const p2Ans = answers.p2 || {};
-  const p2Stu = details.p2 || {};
-  for (const qNum of Object.keys(p2Ans)) {
-    const correctSub = p2Ans[qNum] || {};
-    const stuSub = p2Stu[qNum] || {};
-    let subCorrect = 0;
-    (['a', 'b', 'c', 'd'] as const).forEach((sub) => {
-      const cVal = String(correctSub[sub] || '').trim().toUpperCase();
-      const sVal = String(stuSub[sub] || '').trim().toUpperCase();
-      if (cVal && sVal && (cVal === sVal || (cVal === 'Đ' && sVal === 'D') || (cVal === 'S' && sVal === 'S'))) {
-        subCorrect++;
+  const p3Ans = answers.p3 || {};
+
+  const p1Stu = sAns.p1 || {};
+  const p2Stu = sAns.p2 || {};
+  const p3Stu = sAns.p3 || {};
+
+  const numP1 = Number(cfg.num_p1) || Object.keys(p1Ans).length || Object.keys(p1Stu).length || 0;
+  const numP2 = Number(cfg.num_p2) || Object.keys(p2Ans).length || Object.keys(p2Stu).length || 0;
+  const numP3 = Number(cfg.num_p3) || Object.keys(p3Ans).length || Object.keys(p3Stu).length || 0;
+
+  let rawScore = 0;
+  let correctCount = 0;
+
+  // 1. Part I: Multiple choice
+  let p1Correct = 0;
+  const p1Questions = new Set<string>();
+  Object.keys(p1Ans).forEach((k) => p1Questions.add(String(k)));
+  Object.keys(p1Stu).forEach((k) => p1Questions.add(String(k)));
+  for (let i = 1; i <= Math.max(numP1, 1); i++) {
+    p1Questions.add(String(i));
+  }
+
+  const maxP1Count = Math.max(numP1, Object.keys(p1Ans).length, 1);
+
+  p1Questions.forEach((qKey) => {
+    const studentChoice = String(p1Stu[qKey] || '').trim().toUpperCase();
+    const correctChoice = String(p1Ans[qKey] || '').trim().toUpperCase();
+    if (studentChoice && correctChoice && studentChoice === correctChoice) {
+      p1Correct++;
+      correctCount++;
+    }
+  });
+
+  const isPurePart1 = numP1 > 0 && numP2 === 0 && numP3 === 0;
+
+  if (isPurePart1) {
+    rawScore = (p1Correct / maxP1Count) * 10;
+  } else {
+    rawScore += p1Correct * 0.25;
+
+    // 2. Part II: True / False (1 sub = 0.1 pt, 2 subs = 0.25 pt, 3 subs = 0.5 pt, 4 subs = 1.0 pt)
+    const normalizeTF = (val: any) => {
+      const s = String(val || '').trim().toUpperCase();
+      if (s === 'Đ' || s === 'D' || s === 'TRUE' || s === 'T' || s === '1' || s === 'ĐÚNG' || s === 'DUNG') return 'Đ';
+      if (s === 'S' || s === 'FALSE' || s === 'F' || s === '0' || s === 'SAI') return 'S';
+      return s;
+    };
+
+    const p2Questions = new Set<string>();
+    Object.keys(p2Ans).forEach((k) => p2Questions.add(String(k)));
+    Object.keys(p2Stu).forEach((k) => p2Questions.add(String(k)));
+    for (let i = 1; i <= Math.max(numP2, 1); i++) {
+      p2Questions.add(String(i));
+    }
+
+    p2Questions.forEach((qKey) => {
+      const stuSub = p2Stu[qKey] || {};
+      const keySub = p2Ans[qKey] || {};
+      let correctSubs = 0;
+
+      (['a', 'b', 'c', 'd'] as const).forEach((sub) => {
+        const studentVal = normalizeTF(stuSub[sub]);
+        const correctVal = normalizeTF(keySub[sub]);
+        if (studentVal && correctVal && studentVal === correctVal) {
+          correctSubs++;
+        }
+      });
+
+      if (correctSubs === 1) rawScore += 0.1;
+      else if (correctSubs === 2) rawScore += 0.25;
+      else if (correctSubs === 3) rawScore += 0.5;
+      else if (correctSubs === 4) {
+        rawScore += 1.0;
         correctCount++;
       }
     });
 
-    if (subCorrect === 1) totalScore += 0.1;
-    else if (subCorrect === 2) totalScore += 0.25;
-    else if (subCorrect === 3) totalScore += 0.5;
-    else if (subCorrect === 4) totalScore += 1.0;
-  }
+    // 3. Part III: Short answer (0.5 points each)
+    const normalizeShortAnswer = (val: string) => {
+      let str = String(val || '')
+        .trim()
+        .toLowerCase()
+        .replace(/,/g, '.')
+        .replace(/\s+/g, '');
+      const num = Number(str);
+      if (!isNaN(num) && str !== '') {
+        return String(num);
+      }
+      return str;
+    };
 
-  // Part 3: Short numerical answers
-  const p3Ans = answers.p3 || {};
-  const p3Stu = details.p3 || {};
-  for (const qNum of Object.keys(p3Ans)) {
-    const cStr = String(p3Ans[qNum] || '').trim().replace(',', '.');
-    const sStr = String(p3Stu[qNum] || '').trim().replace(',', '.');
-    if (cStr && sStr && cStr.toLowerCase() === sStr.toLowerCase()) {
-      totalScore += 0.5;
-      correctCount++;
+    const p3Questions = new Set<string>();
+    Object.keys(p3Ans).forEach((k) => p3Questions.add(String(k)));
+    Object.keys(p3Stu).forEach((k) => p3Questions.add(String(k)));
+    for (let i = 1; i <= Math.max(numP3, 1); i++) {
+      p3Questions.add(String(i));
     }
+
+    p3Questions.forEach((qKey) => {
+      const rawStudentVal = String(p3Stu[qKey] || '');
+      const rawCorrectVal = String(p3Ans[qKey] || '');
+      const studentValNorm = normalizeShortAnswer(rawStudentVal);
+      const correctValNorm = normalizeShortAnswer(rawCorrectVal);
+
+      if (rawStudentVal && rawCorrectVal && (rawStudentVal.trim().toLowerCase() === rawCorrectVal.trim().toLowerCase() || studentValNorm === correctValNorm)) {
+        rawScore += 0.5;
+        correctCount++;
+      }
+    });
   }
 
-  // Deduct penalty for tab switches / cheating (0.5 pt per cheat after 2 warnings)
-  if (cheatCount > 2) {
-    const penalty = Math.min(2.0, (cheatCount - 2) * 0.5);
-    totalScore = Math.max(0, totalScore - penalty);
+  // Calculate final score
+  let finalScore = 0;
+  if (isPurePart1) {
+    finalScore = rawScore;
+  } else {
+    const maxPossibleRawScore = numP1 * 0.25 + numP2 * 1.0 + numP3 * 0.5;
+    finalScore = maxPossibleRawScore > 0 ? (rawScore / maxPossibleRawScore) * 10 : 0;
   }
 
-  totalScore = Math.round(totalScore * 100) / 100;
+  finalScore = Math.max(0, Math.min(10, Number(finalScore.toFixed(2))));
+
   return {
-    score: Math.min(10, Math.max(0, totalScore)),
+    score: finalScore,
     correct: correctCount,
   };
 }
@@ -119,15 +198,28 @@ export function regradeAllSubmissionsLocally(
   submissions: ExamSubmission[],
   exams: ExamItem[]
 ): { updatedSubmissions: ExamSubmission[]; regradedCount: number } {
-  const examsMap: Record<string, ExamItem> = {};
-  exams.forEach((e) => {
-    if (e.id) examsMap[e.id] = e;
-    if (e.title) examsMap[e.title.trim()] = e;
-  });
+  const normTitle = (s: string) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
   let regradedCount = 0;
   const updatedSubmissions = submissions.map((sub) => {
-    const matchedExam = (sub.examId ? examsMap[sub.examId] : null) || examsMap[sub.examTitle?.trim()];
+    const subId = sub.examId ? String(sub.examId).trim() : '';
+    const subTitle = normTitle(sub.examTitle);
+
+    let matchedExam: ExamItem | undefined;
+    if (subId) {
+      matchedExam = exams.find((e) => e && String(e.id).trim() === subId);
+    }
+    if (!matchedExam && subTitle) {
+      matchedExam = exams.find((e) => e && normTitle(e.title) === subTitle);
+      if (!matchedExam) {
+        matchedExam = exams.find((e) => {
+          if (!e || !e.title) return false;
+          const tNorm = normTitle(e.title);
+          return tNorm.includes(subTitle) || subTitle.includes(tNorm);
+        });
+      }
+    }
+
     if (matchedExam && matchedExam.answers && sub.details) {
       const cheatCount = typeof sub.cheat === 'number' ? sub.cheat : parseInt(String(sub.cheat || '0'), 10) || 0;
       const res = calculateScoreLocally(matchedExam, sub.details, cheatCount);
@@ -135,6 +227,7 @@ export function regradeAllSubmissionsLocally(
       return {
         ...sub,
         examId: matchedExam.id,
+        examTitle: matchedExam.title,
         score: res.score,
         correct: res.correct,
         correctAnswers: matchedExam.answers,
@@ -143,7 +236,6 @@ export function regradeAllSubmissionsLocally(
     return sub;
   });
 
-  // Save updated history locally
   safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(updatedSubmissions));
 
   // Trigger app data updated
@@ -400,6 +492,18 @@ export const getLocalExams = (): ExamItem[] => {
     return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_EXAMS;
   } catch (e) {
     return INITIAL_EXAMS;
+  }
+};
+
+// Helper to get local history safely
+export const getLocalHistory = (): ExamSubmission[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.HISTORY);
+    if (!raw) return INITIAL_HISTORY;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : INITIAL_HISTORY;
+  } catch (e) {
+    return INITIAL_HISTORY;
   }
 };
 
@@ -845,6 +949,16 @@ export const saveExamData = async (
 
   safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(localExams));
 
+  // Re-grade local history immediately against the updated exam list
+  const currentHistory = getLocalHistory();
+  if (currentHistory && currentHistory.length > 0) {
+    try {
+      regradeAllSubmissionsLocally(currentHistory, localExams);
+    } catch (e) {
+      console.warn('Local regrade error on exam save:', e);
+    }
+  }
+
   // 2. Synchronize to Server Backend (Instant Cross-Browser Sync with Auth)
   let serverSynced = false;
   try {
@@ -855,6 +969,10 @@ export const saveExamData = async (
     });
     if (sRes.ok) {
       serverSynced = true;
+      const data = await safeFetchJson(sRes);
+      if (data && Array.isArray(data.history) && data.history.length > 0) {
+        safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(data.history));
+      }
     }
   } catch (e) {
     console.warn('Server API /api/exams/save failed:', e);

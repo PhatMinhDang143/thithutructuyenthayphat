@@ -206,35 +206,26 @@ export async function syncStoreWithGAS(): Promise<boolean> {
             let finalScore = Number(h.score) || 0;
             let finalCorrect = Number(h.correct) || 0;
 
-            const normalizeTitle = (t: string) => (t || '').toLowerCase().replace(/\s+/g, ' ').trim();
-            const matchedExam = store.exams.find(
-              (e: any) => (e.id && (e.id === h.examId || e.id === existing?.examId)) ||
-                          normalizeTitle(e.title) === normalizeTitle(h.examTitle) ||
-                          normalizeTitle(e.title).includes(normalizeTitle(h.examTitle)) ||
-                          normalizeTitle(h.examTitle).includes(normalizeTitle(e.title))
-            );
-
+            const matchedExam = matchExamForSubmission(h, store.exams) || matchExamForSubmission(existing, store.exams);
             let finalCorrectAnswers = h.correctAnswers || existing?.correctAnswers || (matchedExam ? matchedExam.answers : undefined);
 
-            if (mergedDetails && (finalScore === 0 || !existing || !finalCorrectAnswers)) {
-              if (matchedExam && matchedExam.answers) {
-                const regraded = gradeSubmissionAuthoritatively(
-                  matchedExam,
-                  mergedDetails,
-                  Number(parseInt(h.cheat, 10)) || 0,
-                  { username: h.username, name: h.name, group: h.group }
-                );
-                if (regraded.score > 0 || regraded.correct > 0) {
-                  finalScore = regraded.score;
-                  finalCorrect = regraded.correct;
-                  finalCorrectAnswers = regraded.correctAnswers || matchedExam.answers;
-                }
-              }
+            if (matchedExam && matchedExam.answers && mergedDetails) {
+              const cheatNum = Number(parseInt(String(h.cheat || existing?.cheat || '0'), 10)) || 0;
+              const regraded = gradeSubmissionAuthoritatively(
+                matchedExam,
+                mergedDetails,
+                cheatNum,
+                { username: h.username, name: h.name, group: h.group }
+              );
+              finalScore = regraded.score;
+              finalCorrect = regraded.correct;
+              finalCorrectAnswers = regraded.correctAnswers || matchedExam.answers;
             }
 
             histMap.set(key, {
               ...h,
-              examId: h.examId || existing?.examId || (matchedExam ? matchedExam.id : undefined),
+              examId: matchedExam ? matchedExam.id : (h.examId || existing?.examId),
+              examTitle: matchedExam ? matchedExam.title : h.examTitle,
               score: finalScore,
               correct: finalCorrect,
               details: mergedDetails,
@@ -374,8 +365,44 @@ function sanitizeExamForStudent(exam: any) {
   return safeExam;
 }
 
+export function normalizeExamTitle(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+export function matchExamForSubmission(sub: any, exams: any[]): any {
+  if (!sub || !Array.isArray(exams) || exams.length === 0) return null;
+  const subId = sub.examId ? String(sub.examId).trim() : '';
+  const subTitleNorm = normalizeExamTitle(sub.examTitle);
+
+  // 1. Direct ID match
+  if (subId) {
+    const byId = exams.find((e) => e && String(e.id).trim() === subId);
+    if (byId) return byId;
+  }
+
+  // 2. Exact normalized title match
+  if (subTitleNorm) {
+    const exactTitle = exams.find((e) => e && normalizeExamTitle(e.title) === subTitleNorm);
+    if (exactTitle) return exactTitle;
+
+    // 3. Substring / inclusion match
+    const fuzzyTitle = exams.find((e) => {
+      if (!e || !e.title) return false;
+      const tNorm = normalizeExamTitle(e.title);
+      return tNorm.includes(subTitleNorm) || subTitleNorm.includes(tNorm);
+    });
+    if (fuzzyTitle) return fuzzyTitle;
+  }
+
+  return null;
+}
+
 // Authoritative Server-Side Exam Grading Logic
-function gradeSubmissionAuthoritatively(
+export function gradeSubmissionAuthoritatively(
   exam: any,
   studentAnswers: any = {},
   cheatCount: number = 0,
@@ -383,70 +410,139 @@ function gradeSubmissionAuthoritatively(
 ) {
   const cfg = exam.questions || {};
   const key = exam.answers || { p1: {}, p2: {}, p3: {} };
-  const sAns = studentAnswers || { p1: {}, p2: {}, p3: {} };
+
+  let sAns = studentAnswers || { p1: {}, p2: {}, p3: {} };
+  if (typeof sAns === 'string') {
+    try {
+      sAns = JSON.parse(sAns);
+    } catch (e) {
+      sAns = { p1: {}, p2: {}, p3: {} };
+    }
+  }
+
+  const p1Key = key.p1 || {};
+  const p2Key = key.p2 || {};
+  const p3Key = key.p3 || {};
+
+  const p1Stu = sAns.p1 || {};
+  const p2Stu = sAns.p2 || {};
+  const p3Stu = sAns.p3 || {};
+
+  const numP1 = Number(cfg.num_p1) || Object.keys(p1Key).length || Object.keys(p1Stu).length || 0;
+  const numP2 = Number(cfg.num_p2) || Object.keys(p2Key).length || Object.keys(p2Stu).length || 0;
+  const numP3 = Number(cfg.num_p3) || Object.keys(p3Key).length || Object.keys(p3Stu).length || 0;
 
   let rawScore = 0;
   let correctCount = 0;
 
-  const numP1 = Number(cfg.num_p1) || 0;
-  const numP2 = Number(cfg.num_p2) || 0;
-  const numP3 = Number(cfg.num_p3) || 0;
-
-  // 1. Part I: Multiple choice (0.25 points each)
-  for (let i = 1; i <= numP1; i++) {
-    const studentChoice = String(sAns.p1?.[i] || '').trim().toUpperCase();
-    const correctChoice = String(key.p1?.[i] || '').trim().toUpperCase();
-    if (studentChoice && correctChoice && studentChoice === correctChoice) {
-      rawScore += 0.25;
-      correctCount++;
-    }
+  // 1. Part I: Multiple choice
+  let p1Correct = 0;
+  const p1Questions = new Set<string>();
+  Object.keys(p1Key).forEach((k) => p1Questions.add(String(k)));
+  Object.keys(p1Stu).forEach((k) => p1Questions.add(String(k)));
+  for (let i = 1; i <= Math.max(numP1, 1); i++) {
+    p1Questions.add(String(i));
   }
 
-  // 2. Part II: True / False (1 sub = 0.1 pt, 2 subs = 0.25 pt, 3 subs = 0.5 pt, 4 subs = 1.0 pt)
-  for (let i = 1; i <= numP2; i++) {
-    let correctSubs = 0;
-    (['a', 'b', 'c', 'd'] as const).forEach((sub) => {
-      const studentVal = String(sAns.p2?.[i]?.[sub] || '').trim().toUpperCase();
-      const correctVal = String(key.p2?.[i]?.[sub] || '').trim().toUpperCase();
-      if (studentVal && correctVal && studentVal === correctVal) {
-        correctSubs++;
+  const maxP1Count = Math.max(numP1, Object.keys(p1Key).length, 1);
+
+  p1Questions.forEach((qKey) => {
+    const studentChoice = String(p1Stu[qKey] || '').trim().toUpperCase();
+    const correctChoice = String(p1Key[qKey] || '').trim().toUpperCase();
+    if (studentChoice && correctChoice && studentChoice === correctChoice) {
+      p1Correct++;
+      correctCount++;
+    }
+  });
+
+  const isPurePart1 = numP1 > 0 && numP2 === 0 && numP3 === 0;
+
+  if (isPurePart1) {
+    rawScore = (p1Correct / maxP1Count) * 10;
+  } else {
+    rawScore += p1Correct * 0.25;
+
+    // 2. Part II: True / False (1 sub = 0.1 pt, 2 subs = 0.25 pt, 3 subs = 0.5 pt, 4 subs = 1.0 pt)
+    const normalizeTF = (val: any) => {
+      const s = String(val || '').trim().toUpperCase();
+      if (s === 'Đ' || s === 'D' || s === 'TRUE' || s === 'T' || s === '1' || s === 'ĐÚNG' || s === 'DUNG') return 'Đ';
+      if (s === 'S' || s === 'FALSE' || s === 'F' || s === '0' || s === 'SAI') return 'S';
+      return s;
+    };
+
+    const p2Questions = new Set<string>();
+    Object.keys(p2Key).forEach((k) => p2Questions.add(String(k)));
+    Object.keys(p2Stu).forEach((k) => p2Questions.add(String(k)));
+    for (let i = 1; i <= Math.max(numP2, 1); i++) {
+      p2Questions.add(String(i));
+    }
+
+    p2Questions.forEach((qKey) => {
+      const stuSub = p2Stu[qKey] || {};
+      const keySub = p2Key[qKey] || {};
+      let correctSubs = 0;
+
+      (['a', 'b', 'c', 'd'] as const).forEach((sub) => {
+        const studentVal = normalizeTF(stuSub[sub]);
+        const correctVal = normalizeTF(keySub[sub]);
+        if (studentVal && correctVal && studentVal === correctVal) {
+          correctSubs++;
+        }
+      });
+
+      if (correctSubs === 1) rawScore += 0.1;
+      else if (correctSubs === 2) rawScore += 0.25;
+      else if (correctSubs === 3) rawScore += 0.5;
+      else if (correctSubs === 4) {
+        rawScore += 1.0;
+        correctCount++;
       }
     });
 
-    if (correctSubs === 1) rawScore += 0.1;
-    else if (correctSubs === 2) rawScore += 0.25;
-    else if (correctSubs === 3) rawScore += 0.5;
-    else if (correctSubs === 4) {
-      rawScore += 1.0;
-      correctCount++;
+    // 3. Part III: Short answer (0.5 points each)
+    const normalizeShortAnswer = (val: string) => {
+      let str = String(val || '')
+        .trim()
+        .toLowerCase()
+        .replace(/,/g, '.')
+        .replace(/\s+/g, '');
+      const num = Number(str);
+      if (!isNaN(num) && str !== '') {
+        return String(num);
+      }
+      return str;
+    };
+
+    const p3Questions = new Set<string>();
+    Object.keys(p3Key).forEach((k) => p3Questions.add(String(k)));
+    Object.keys(p3Stu).forEach((k) => p3Questions.add(String(k)));
+    for (let i = 1; i <= Math.max(numP3, 1); i++) {
+      p3Questions.add(String(i));
     }
+
+    p3Questions.forEach((qKey) => {
+      const rawStudentVal = String(p3Stu[qKey] || '');
+      const rawCorrectVal = String(p3Key[qKey] || '');
+      const studentValNorm = normalizeShortAnswer(rawStudentVal);
+      const correctValNorm = normalizeShortAnswer(rawCorrectVal);
+
+      if (rawStudentVal && rawCorrectVal && (rawStudentVal.trim().toLowerCase() === rawCorrectVal.trim().toLowerCase() || studentValNorm === correctValNorm)) {
+        rawScore += 0.5;
+        correctCount++;
+      }
+    });
   }
 
-  // 3. Part III: Short answer (0.5 points each)
-  const normalizeShortAnswer = (val: string) => {
-    return String(val || '')
-      .trim()
-      .toLowerCase()
-      .replace(/,/g, '.')
-      .replace(/\s+/g, '');
-  };
-
-  for (let i = 1; i <= numP3; i++) {
-    const rawStudentVal = String(sAns.p3?.[i] || '');
-    const rawCorrectVal = String(key.p3?.[i] || '');
-    const studentValNorm = normalizeShortAnswer(rawStudentVal);
-    const correctValNorm = normalizeShortAnswer(rawCorrectVal);
-
-    if (rawStudentVal && rawCorrectVal && (rawStudentVal.trim().toLowerCase() === rawCorrectVal.trim().toLowerCase() || studentValNorm === correctValNorm)) {
-      rawScore += 0.5;
-      correctCount++;
-    }
+  // Calculate final score
+  let finalScore = 0;
+  if (isPurePart1) {
+    finalScore = rawScore;
+  } else {
+    const maxPossibleRawScore = numP1 * 0.25 + numP2 * 1.0 + numP3 * 0.5;
+    finalScore = maxPossibleRawScore > 0 ? (rawScore / maxPossibleRawScore) * 10 : 0;
   }
 
-  // Vietnamese high school standard 10-point scale normalization
-  const maxPossibleRawScore = numP1 * 0.25 + numP2 * 1.0 + numP3 * 0.5;
-  let finalScore = maxPossibleRawScore > 0 ? (rawScore / maxPossibleRawScore) * 10 : 0;
-  finalScore = Number(finalScore.toFixed(2));
+  finalScore = Math.max(0, Math.min(10, Number(finalScore.toFixed(2))));
 
   const submission = {
     id: 'sub_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
@@ -460,7 +556,7 @@ function gradeSubmissionAuthoritatively(
     correct: correctCount,
     cheat: `${Number(cheatCount) || 0} lần`,
     details: sAns,
-    correctAnswers: key, // Given back securely ONLY inside the graded result receipt after submitting
+    correctAnswers: key,
   };
 
   return submission;
@@ -784,20 +880,23 @@ app.post('/api/exams/save', requireTeacherAuth, async (req, res) => {
       if (exam.answers) {
         let regradedCount = 0;
         store.history = store.history.map((sub: any) => {
-          if (sub.examTitle === exam.title || sub.examId === exam.id) {
+          const isMatch = matchExamForSubmission(sub, [exam]);
+          if (isMatch) {
             const regraded = gradeSubmissionAuthoritatively(
               exam,
               sub.details || {},
-              Number(parseInt(sub.cheat, 10)) || 0,
+              Number(parseInt(String(sub.cheat || '0'), 10)) || 0,
               { username: sub.username, name: sub.name, group: sub.group }
             );
             regradedCount++;
             return {
               ...sub,
               examId: exam.id,
+              examTitle: exam.title,
               score: regraded.score,
               correct: regraded.correct,
               correctAnswers: regraded.correctAnswers,
+              details: regraded.details || sub.details,
             };
           }
           return sub;
@@ -818,8 +917,9 @@ app.post('/api/exams/save', requireTeacherAuth, async (req, res) => {
     res.json({
       success: true,
       exam: updatedExam,
+      history: getStore().history,
       lastUpdated: getStore().lastUpdated,
-      message: 'Đã lưu và đồng bộ đề thi tới toàn bộ hệ thống & Google Sheet!',
+      message: 'Đã lưu đáp án và tự động chấm lại toàn bộ bài làm trong lịch sử!',
     });
   } catch (err: any) {
     console.error('Save exam error:', err);
@@ -1097,9 +1197,7 @@ app.post('/api/admin/regrade', requireTeacherAuth, async (req, res) => {
         const details = h.details;
         if (!details) return h;
 
-        const matchedExam = store.exams.find(
-          (e: any) => e.title === h.examTitle || e.id === h.examId
-        );
+        const matchedExam = matchExamForSubmission(h, store.exams);
         if (matchedExam && matchedExam.answers) {
           const cheat = Number(parseInt(String(h.cheat || '0'), 10)) || 0;
           const regraded = gradeSubmissionAuthoritatively(
@@ -1111,6 +1209,8 @@ app.post('/api/admin/regrade', requireTeacherAuth, async (req, res) => {
           regradedCount++;
           return {
             ...h,
+            examId: matchedExam.id,
+            examTitle: matchedExam.title,
             score: regraded.score,
             correct: regraded.correct,
             correctAnswers: regraded.correctAnswers,
@@ -1125,7 +1225,7 @@ app.post('/api/admin/regrade', requireTeacherAuth, async (req, res) => {
     res.json({
       success: true,
       regradedCount,
-      message: `Đã chấm lại thành công ${regradedCount} bài thi!`,
+      message: `Đã chấm lại thành công ${regradedCount} bài thi theo toàn bộ đáp án mới nhất!`,
       history: getStore().history,
     });
   } catch (err: any) {
