@@ -1407,7 +1407,7 @@
       "name": "Ngọc Tuyết",
       "group": "",
       "examTitle": "Đề kiểm tra số 2",
-      "score": 10.0,
+      "score": 10,
       "correct": 10,
       "cheat": "0 lần",
       "details": {
@@ -1678,7 +1678,7 @@
       "name": "Ngân",
       "group": "",
       "examTitle": "Đề kiểm tra số 2",
-      "score": 5.0,
+      "score": 5,
       "correct": 6,
       "cheat": "3 lần",
       "details": {
@@ -2841,7 +2841,7 @@
       "name": "Ngọc Tuyết",
       "group": "12B",
       "examTitle": "Đề ôn tập C1,2 Toán 12",
-      "score": 0.0,
+      "score": 0,
       "correct": 0,
       "cheat": "0 lần",
       "details": {
@@ -3353,7 +3353,7 @@
       "name": "Nhựt Tân",
       "group": "12B",
       "examTitle": "Đề ôn tập C1,2 Toán 12",
-      "score": 6.0,
+      "score": 6,
       "correct": 13,
       "cheat": "2 lần",
       "details": {
@@ -3562,7 +3562,7 @@
       "name": "Ngọc Ý",
       "group": "12B",
       "examTitle": "Đề ôn tập C1,2 Toán 12",
-      "score": 0.0,
+      "score": 0,
       "correct": 0,
       "cheat": "0 lần",
       "details": {
@@ -3958,7 +3958,7 @@
       "name": "Khách 9965",
       "group": "Khách",
       "examTitle": "Đề ôn tập C1,2 Toán 12",
-      "score": 0.0,
+      "score": 0,
       "correct": 0,
       "cheat": "0 lần",
       "details": {
@@ -4025,7 +4025,7 @@
       "name": "Ngọc Tuyết",
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
-      "score": 9.0,
+      "score": 9,
       "correct": 20,
       "cheat": "0 lần",
       "details": {
@@ -4136,7 +4136,7 @@
       "name": "Đăng Khoa",
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
-      "score": 9.0,
+      "score": 9,
       "correct": 20,
       "cheat": "4 lần",
       "details": {
@@ -4248,7 +4248,7 @@
       "name": "Nhựt Tân",
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
-      "score": 9.0,
+      "score": 9,
       "correct": 20,
       "cheat": "2 lần",
       "details": {
@@ -4694,7 +4694,7 @@
       "name": "Ngân",
       "group": "12B",
       "examTitle": "ĐỀ KHẢO SÁT CHẤT LƯỢNG TOÁN  12 LẦN 4",
-      "score": 5.0,
+      "score": 5,
       "correct": 10,
       "cheat": "6 lần",
       "details": {
@@ -5145,5 +5145,5 @@
     "12B",
     "12G3"
   ],
-  "lastUpdated": 1788405093270
+  "lastUpdated": 1788406886752
 }

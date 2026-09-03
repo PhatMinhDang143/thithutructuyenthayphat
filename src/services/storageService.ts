@@ -1,4 +1,4 @@
-import { ExamItem, StudentAccount, ExamSubmission } from '../types';
+import { ExamItem, StudentAccount, ExamSubmission, SubmissionTiming } from '../types';
 import { INITIAL_EXAMS, INITIAL_STUDENTS, INITIAL_HISTORY, INITIAL_CLASSES } from '../data/initialData';
 
 const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycby3mDVDZAlmuPoP2fXwJNyQXL5kdmWgqhoEu0FPMhYf9lwj1eqNwSVSGkVzA5d2YKAP/exec";
@@ -1148,6 +1148,7 @@ export const submitExamAnswersToServer = async (payload: {
   group: string;
   studentAnswers: any;
   cheatCount: number;
+  timing?: SubmissionTiming;
 }): Promise<{ success: boolean; submission?: ExamSubmission; error?: string }> => {
   initLocalStorageIfEmpty();
 
@@ -1211,6 +1212,7 @@ export const submitExamAnswersToServer = async (payload: {
     submitted_at: new Date().toLocaleString('vi-VN'),
     details: payload.studentAnswers,
     correctAnswers: matchedExam?.answers,
+    timing: payload.timing,
   };
 
   let localHistory: ExamSubmission[] = [];
@@ -1545,7 +1547,7 @@ function parseAnswersFromSheet(raw) {
   var p1 = {}, p2 = {}, p3 = {};
 
   // Part 2
-  var p2Regex = /(?:câu|c)?\s*(\d+)\s*[\.\:\-\s]?\s*([abcd])\s*[\.\:\-\s]?\s*([ĐđSsTtFf]|đúng|sai|true|false)/gi;
+  var p2Regex = /(?:câu|c)?\\s*(\\d+)\\s*[\\.\\:\\-\\s]?\\s*([abcd])\\s*[\\.\\:\\-\\s]?\\s*([ĐđSsTtFf]|đúng|sai|true|false)/gi;
   var m2;
   while ((m2 = p2Regex.exec(str)) !== null) {
     var qNum2 = m2[1];
@@ -1556,7 +1558,7 @@ function parseAnswersFromSheet(raw) {
   }
 
   // Part 3
-  var p3Regex = /(?:phần\s*3|p3|câu|c)?\s*(\d+)\s*[\:\=]\s*([^\,\;\n\r\|]+)/gi;
+  var p3Regex = /(?:phần\\s*3|p3|câu|c)?\\s*(\\d+)\\s*[\\:\\=]\\s*([^\\,\\;\\n\\r\\|]+)/gi;
   var m3;
   while ((m3 = p3Regex.exec(str)) !== null) {
     var qNum3 = m3[1];
@@ -1567,7 +1569,7 @@ function parseAnswersFromSheet(raw) {
   }
 
   // Part 1
-  var p1Regex = /(?:câu|c)?\s*(\d+)\s*[\.\:\-\s]?\s*([ABCDabcd])(?!\w)/g;
+  var p1Regex = /(?:câu|c)?\\s*(\\d+)\\s*[\\.\\:\\-\\s]?\\s*([ABCDabcd])(?!\\w)/g;
   var m1;
   while ((m1 = p1Regex.exec(str)) !== null) {
     var qNum1 = m1[1];
@@ -1577,7 +1579,7 @@ function parseAnswersFromSheet(raw) {
 
   // Fallback: Pure sequence like "A B C D A B"
   if (Object.keys(p1).length === 0 && Object.keys(p2).length === 0 && Object.keys(p3).length === 0) {
-    var tokens = str.replace(/[^A-Za-z]/g, ' ').trim().split(/\s+/);
+    var tokens = str.replace(/[^A-Za-z]/g, ' ').trim().split(/\\s+/);
     if (tokens.length > 0 && tokens.every(function(t) { return t.length === 1 && /^[A-Da-d]$/.test(t); })) {
       for (var k = 0; k < tokens.length; k++) {
         p1[String(k + 1)] = tokens[k].toUpperCase();
@@ -1702,8 +1704,8 @@ function getStudentsData(ss) {
       var g = String(rows[i][colGroup] || 'Chưa phân lớp').trim();
 
       // Auto-detect if name and password got inverted in sheet data
-      var pHasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(p) || p.indexOf(' ') > -1;
-      var nNoVietnamese = !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(n) && n.indexOf(' ') === -1;
+      var pHasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\\s]/i.test(p) || p.indexOf(' ') > -1;
+      var nNoVietnamese = !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\\s]/i.test(n) && n.indexOf(' ') === -1;
       if (pHasVietnamese && nNoVietnamese && n.length > 0) {
         var tmp = n;
         n = p;
@@ -1771,6 +1773,7 @@ function getHistoryData(ss) {
     var correct = 0;
     var cheat = '0 lần';
     var detailsObj = null;
+    var timingObj = null;
 
     // Scan every cell in the row to find JSON details, timestamps, cheat counts, and usernames
     for (var c = 0; c < r.length; c++) {
@@ -1781,6 +1784,10 @@ function getHistoryData(ss) {
       if (!detailsObj && strVal.charAt(0) === '{' && (strVal.indexOf('"p1"') > -1 || strVal.indexOf('"p2"') > -1 || strVal.indexOf('"p3"') > -1)) {
         try {
           detailsObj = JSON.parse(strVal);
+        } catch(err) {}
+      } else if (!timingObj && strVal.charAt(0) === '{' && (strVal.indexOf('"questionTimings"') > -1 || strVal.indexOf('"totalSeconds"') > -1)) {
+        try {
+          timingObj = JSON.parse(strVal);
         } catch(err) {}
       } else if (!submitted_at && (strVal.indexOf(':') > -1 && (strVal.indexOf('/') > -1 || strVal.indexOf('-') > -1))) {
         submitted_at = strVal;
@@ -1841,7 +1848,8 @@ function getHistoryData(ss) {
       score: score,
       correct: correct,
       cheat: cheat,
-      details: detailsObj
+      details: detailsObj,
+      timing: timingObj || undefined
     });
   }
   return history;
@@ -1912,8 +1920,10 @@ function gradeExamLocally(exam, details) {
 function saveSubmissionToSheet(ss, sub) {
   var sheet = getHistorySheet(ss);
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['Thời Gian', 'Tài Khoản', 'Họ Tên', 'Lớp', 'Đề Thi', 'Điểm', 'Cảnh Báo', 'Chi Tiết Bài Làm']);
+    sheet.appendRow(['Thời Gian', 'Tài Khoản', 'Họ Tên', 'Lớp', 'Đề Thi', 'Điểm', 'Thời Lượng', 'Cảnh Báo', 'Chi Tiết Bài Làm', 'Dữ Liệu Tốc Độ']);
   }
+  var durationStr = (sub.timing && sub.timing.formattedDuration) ? sub.timing.formattedDuration : '';
+  var timingJson = (sub.timing) ? JSON.stringify(sub.timing) : '';
   sheet.appendRow([
     sub.submitted_at || new Date().toLocaleString('vi-VN'),
     sub.username,
@@ -1921,8 +1931,10 @@ function saveSubmissionToSheet(ss, sub) {
     sub.group,
     sub.examTitle,
     sub.score,
+    durationStr,
     sub.cheat || '0 lần',
-    JSON.stringify(sub.details || {})
+    JSON.stringify(sub.details || {}),
+    timingJson
   ]);
 }
 
@@ -1930,7 +1942,7 @@ function clearHistorySheet(ss) {
   var sheet = getHistorySheet(ss);
   if (sheet) {
     sheet.clearContents();
-    sheet.appendRow(['Thời Gian', 'Tài Khoản', 'Họ Tên', 'Lớp', 'Đề Thi', 'Điểm', 'Cảnh Báo', 'Chi Tiết Bài Làm']);
+    sheet.appendRow(['Thời Gian', 'Tài Khoản', 'Họ Tên', 'Lớp', 'Đề Thi', 'Điểm', 'Thời Lượng', 'Cảnh Báo', 'Chi Tiết Bài Làm', 'Dữ Liệu Tốc Độ']);
   }
 }
 `;

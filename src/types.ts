@@ -56,6 +56,27 @@ export interface StudentAnswers {
   p3: { [questionNum: number]: string };
 }
 
+export interface QuestionTimingRecord {
+  timeFromStartSeconds: number; // seconds from test start when this question was answered
+  durationSeconds: number; // time spent on this question (seconds)
+  changeCount?: number; // number of times answer was updated
+  answeredAt?: string; // formatted time e.g. "01:45"
+  choice?: string; // what choice was chosen
+}
+
+export interface SubmissionTiming {
+  totalSeconds: number; // Total exam time in seconds
+  formattedDuration: string; // e.g. "24 phút 15 giây"
+  startedAt?: string; // timestamp / formatted time
+  submittedAt?: string; // timestamp / formatted time
+  avgSecondsPerQuestion?: number; // Average seconds per question
+  fastestQuestion?: { question: string; seconds: number };
+  slowestQuestion?: { question: string; seconds: number };
+  questionTimings: {
+    [questionKey: string]: QuestionTimingRecord; // e.g. "p1_1", "p2_1_a", "p3_1"
+  };
+}
+
 export interface ExamSubmission {
   id?: string;
   examId?: string;
@@ -69,6 +90,7 @@ export interface ExamSubmission {
   cheat: string; // e.g. "0 lần" or "2 lần"
   details?: StudentAnswers;
   correctAnswers?: AnswerKeys; // Authoritative answer key returned securely after server-side grading
+  timing?: SubmissionTiming; // Secret telemetry: total exam duration and per-question speed (teacher-only)
 }
 
 export interface AppUser {

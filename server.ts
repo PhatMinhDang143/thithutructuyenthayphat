@@ -224,6 +224,7 @@ export async function syncStoreWithGAS(): Promise<boolean> {
 
             histMap.set(key, {
               ...h,
+              timing: existing?.timing || h.timing || undefined,
               examId: matchedExam ? matchedExam.id : (h.examId || existing?.examId),
               examTitle: matchedExam ? matchedExam.title : h.examTitle,
               score: finalScore,
@@ -406,7 +407,8 @@ export function gradeSubmissionAuthoritatively(
   exam: any,
   studentAnswers: any = {},
   cheatCount: number = 0,
-  studentInfo: { username?: string; name?: string; group?: string } = {}
+  studentInfo: { username?: string; name?: string; group?: string } = {},
+  timing?: any
 ) {
   const cfg = exam.questions || {};
   const key = exam.answers || { p1: {}, p2: {}, p3: {} };
@@ -557,6 +559,7 @@ export function gradeSubmissionAuthoritatively(
     cheat: `${Number(cheatCount) || 0} lần`,
     details: sAns,
     correctAnswers: key,
+    timing: timing || undefined,
   };
 
   return submission;
@@ -1003,7 +1006,7 @@ app.post('/api/sync/refresh', async (req, res) => {
 // 9. AUTHORITATIVE SERVER-SIDE EXAM SUBMISSION & GRADING (High-Concurrency Safe with WAL)
 app.post('/api/exams/submit', async (req, res) => {
   try {
-    const { examId, examTitle, username, name, group, studentAnswers, cheatCount } = req.body;
+    const { examId, examTitle, username, name, group, studentAnswers, cheatCount, timing } = req.body;
 
     if (!examId && !examTitle) {
       return res.status(400).json({ success: false, error: 'Thiếu thông tin nhận diện đề thi (examId)' });
@@ -1052,7 +1055,8 @@ app.post('/api/exams/submit', async (req, res) => {
       targetExam,
       studentAnswers,
       Number(cheatCount) || 0,
-      { username, name, group }
+      { username, name, group },
+      timing
     );
 
     // Save authoritative submission to history through Atomic Transaction Queue + WAL

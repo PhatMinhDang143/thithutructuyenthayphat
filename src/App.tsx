@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppUser, ExamItem, ExamSubmission, StudentAnswers } from './types';
+import { AppUser, ExamItem, ExamSubmission, StudentAnswers, SubmissionTiming } from './types';
 import { Header } from './components/common/Header';
 import { AuthView } from './components/student/AuthView';
 import { LobbyView } from './components/student/LobbyView';
@@ -96,7 +96,12 @@ export default function App() {
   };
 
   // Authoritative Server-Side Exam Submission & Grading
-  const handleExamSubmit = async (studentAnswers: StudentAnswers, cheatCount: number, exam: ExamItem) => {
+  const handleExamSubmit = async (
+    studentAnswers: StudentAnswers, 
+    cheatCount: number, 
+    exam: ExamItem,
+    timing?: SubmissionTiming
+  ) => {
     if (!currentUser) return;
 
     setLoading(true);
@@ -110,6 +115,7 @@ export default function App() {
       group: currentUser.group,
       studentAnswers,
       cheatCount,
+      timing,
     });
 
     setLoading(false);
@@ -149,6 +155,7 @@ export default function App() {
         cheat: `${cheatCount} lần`,
         submitted_at: new Date().toLocaleString('vi-VN'),
         details: studentAnswers,
+        timing,
       };
 
       setResultData(fallbackPayload);

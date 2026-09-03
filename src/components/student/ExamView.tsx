@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AppUser, ExamItem, StudentAnswers } from '../../types';
+import { AppUser, ExamItem, StudentAnswers, SubmissionTiming, QuestionTimingRecord } from '../../types';
 import { 
   Clock, Minimize2, Maximize2, User, Flag, Check, Edit3, X, 
   AlertTriangle, Send, FileText, AlertCircle, Eye, Bookmark, Settings, Palette
@@ -11,7 +11,7 @@ import { ThemeSettingsModal } from '../common/ThemeSettingsModal';
 interface ExamViewProps {
   user: AppUser;
   exam: ExamItem;
-  onExamSubmit: (studentAnswers: StudentAnswers, cheatCount: number, exam: ExamItem) => void;
+  onExamSubmit: (studentAnswers: StudentAnswers, cheatCount: number, exam: ExamItem, timing?: SubmissionTiming) => void;
 }
 
 export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) => {
@@ -72,6 +72,54 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
   const [timeLeft, setTimeLeft] = useState(exam.duration * 60);
   const [cheatCount, setCheatCount] = useState(0);
 
+  // Secret Telemetry Timing (Teacher-only monitoring)
+  const examStartTimeRef = useRef<number>(Date.now());
+  const lastAnswerTimestampRef = useRef<number>(Date.now());
+  const questionTimingsRef = useRef<Record<string, QuestionTimingRecord>>({});
+  const questionChangeCountsRef = useRef<Record<string, number>>({});
+  const p3DebounceTimers = useRef<Record<number, any>>({});
+
+  const recordQuestionAnswer = (part: 'p1' | 'p2' | 'p3', qNum: number, subOrChoice?: string, val?: string) => {
+    const now = Date.now();
+    const key = part === 'p2' && subOrChoice ? `p2_${qNum}_${subOrChoice}` : `${part}_${qNum}`;
+    const timeFromStart = Math.max(1, Math.round((now - examStartTimeRef.current) / 1000));
+
+    const previousTime = lastAnswerTimestampRef.current || examStartTimeRef.current;
+    const rawDelta = Math.max(1, Math.round((now - previousTime) / 1000));
+    lastAnswerTimestampRef.current = now;
+
+    const currentCount = (questionChangeCountsRef.current[key] || 0) + 1;
+    questionChangeCountsRef.current[key] = currentCount;
+
+    const chosenVal = part === 'p1' ? subOrChoice : (part === 'p2' ? val : val);
+    const existing = questionTimingsRef.current[key];
+    const duration = existing ? existing.durationSeconds + Math.min(rawDelta, 120) : rawDelta;
+
+    const mins = Math.floor(timeFromStart / 60);
+    const secs = timeFromStart % 60;
+    const answeredAt = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+    questionTimingsRef.current[key] = {
+      timeFromStartSeconds: timeFromStart,
+      durationSeconds: duration,
+      changeCount: currentCount,
+      answeredAt,
+      choice: chosenVal ? String(chosenVal) : undefined,
+    };
+  };
+
+  const handleP3Change = (qNum: number, value: string) => {
+    setAnsPart3((prev) => ({ ...prev, [qNum]: value }));
+    if (p3DebounceTimers.current[qNum]) {
+      clearTimeout(p3DebounceTimers.current[qNum]);
+    }
+    if (value.trim()) {
+      p3DebounceTimers.current[qNum] = setTimeout(() => {
+        recordQuestionAnswer('p3', qNum, undefined, value.trim());
+      }, 500);
+    }
+  };
+
   const [ansPart1, setAnsPart1] = useState<{ [q: number]: string }>({});
   const [ansPart2, setAnsPart2] = useState<{ [q: number]: { a?: 'Đ' | 'S'; b?: 'Đ' | 'S'; c?: 'Đ' | 'S'; d?: 'Đ' | 'S' } }>({});
   const [ansPart3, setAnsPart3] = useState<{ [q: number]: string }>({});
@@ -112,6 +160,8 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
           if (parsed.flaggedQuestions) setFlaggedQuestions(parsed.flaggedQuestions);
           if (parsed.cheatCount) setCheatCount(parsed.cheatCount);
           if (parsed.timeLeft > 0) setTimeLeft(parsed.timeLeft);
+          if (parsed.examStartTime) examStartTimeRef.current = parsed.examStartTime;
+          if (parsed.questionTimings) questionTimingsRef.current = parsed.questionTimings;
         } else {
           localStorage.removeItem(storageKey);
         }
@@ -121,7 +171,16 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
 
   // Auto Save Draft
   useEffect(() => {
-    const draftData = { ansPart1, ansPart2, ansPart3, flaggedQuestions, timeLeft, cheatCount };
+    const draftData = { 
+      ansPart1, 
+      ansPart2, 
+      ansPart3, 
+      flaggedQuestions, 
+      timeLeft, 
+      cheatCount,
+      examStartTime: examStartTimeRef.current,
+      questionTimings: questionTimingsRef.current,
+    };
     localStorage.setItem(storageKey, JSON.stringify(draftData));
   }, [ansPart1, ansPart2, ansPart3, flaggedQuestions, timeLeft, cheatCount]);
 
@@ -150,7 +209,52 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
       p2: latest.ansPart2,
       p3: latest.ansPart3,
     };
-    onExamSubmit(studentAnswers, latest.cheatCount, latest.exam);
+
+    // Calculate secret telemetry
+    const now = Date.now();
+    const totalSeconds = Math.max(1, Math.round((now - examStartTimeRef.current) / 1000));
+    const maxAllowed = exam.duration * 60;
+    const clampedTotalSeconds = Math.min(maxAllowed, totalSeconds);
+
+    const mins = Math.floor(clampedTotalSeconds / 60);
+    const secs = clampedTotalSeconds % 60;
+    const formattedDuration = mins > 0 
+      ? `${mins} phút ${secs > 0 ? `${secs} giây` : ''}`.trim()
+      : `${secs} giây`;
+
+    const answeredKeys = Object.keys(questionTimingsRef.current);
+    const totalAnsweredCount = answeredKeys.length;
+    const avgSecondsPerQuestion = totalAnsweredCount > 0 
+      ? Math.round((clampedTotalSeconds / totalAnsweredCount) * 10) / 10 
+      : 0;
+
+    let fastestQuestion: { question: string; seconds: number } | undefined;
+    let slowestQuestion: { question: string; seconds: number } | undefined;
+
+    answeredKeys.forEach((k) => {
+      const t = questionTimingsRef.current[k];
+      if (t) {
+        if (!fastestQuestion || t.durationSeconds < fastestQuestion.seconds) {
+          fastestQuestion = { question: k, seconds: t.durationSeconds };
+        }
+        if (!slowestQuestion || t.durationSeconds > slowestQuestion.seconds) {
+          slowestQuestion = { question: k, seconds: t.durationSeconds };
+        }
+      }
+    });
+
+    const timingData: SubmissionTiming = {
+      totalSeconds: clampedTotalSeconds,
+      formattedDuration,
+      startedAt: new Date(examStartTimeRef.current).toLocaleTimeString('vi-VN'),
+      submittedAt: new Date(now).toLocaleTimeString('vi-VN'),
+      avgSecondsPerQuestion,
+      fastestQuestion,
+      slowestQuestion,
+      questionTimings: questionTimingsRef.current,
+    };
+
+    onExamSubmit(studentAnswers, latest.cheatCount, latest.exam, timingData);
   };
 
   const handleSubmitRef = useRef(handleSubmit);
@@ -380,6 +484,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
                                 type="button"
                                 onClick={() => {
                                   setAnsPart1({ ...ansPart1, [qNum]: ans });
+                                  recordQuestionAnswer('p1', qNum, ans);
                                   playClickSound();
                                 }}
                                 className={`w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center font-black text-xs border-2 border-[#111111] transition-all ${
@@ -454,6 +559,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
                                     type="button"
                                     onClick={() => {
                                       setAnsPart2({ ...ansPart2, [qNum]: { ...ansPart2[qNum], [sub]: 'Đ' } });
+                                      recordQuestionAnswer('p2', qNum, sub, 'Đ');
                                       playClickSound();
                                     }}
                                     className={`w-7 h-6 sm:w-8 sm:h-7 flex items-center justify-center font-black text-xs border-2 border-[#111111] transition-all ${
@@ -468,6 +574,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
                                     type="button"
                                     onClick={() => {
                                       setAnsPart2({ ...ansPart2, [qNum]: { ...ansPart2[qNum], [sub]: 'S' } });
+                                      recordQuestionAnswer('p2', qNum, sub, 'S');
                                       playClickSound();
                                     }}
                                     className={`w-7 h-6 sm:w-8 sm:h-7 flex items-center justify-center font-black text-xs border-2 border-[#111111] transition-all ${
@@ -528,7 +635,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
                         <input
                           type="text"
                           value={ansPart3[qNum] || ''}
-                          onChange={(e) => setAnsPart3({ ...ansPart3, [qNum]: e.target.value })}
+                          onChange={(e) => handleP3Change(qNum, e.target.value)}
                           className="flex-1 bg-[#FDF6E9] border-2 border-[#111111] px-3 py-2 text-xs font-black text-[#111111] outline-none focus:bg-white shadow-[2px_2px_0px_#111111]"
                           placeholder="Nhập đáp số..."
                         />

@@ -1,7 +1,25 @@
 import React, { useState } from 'react';
-import { ExamSubmission } from '../../types';
-import { Trash2, ShieldCheck, AlertTriangle, Filter, Search, Award, CheckSquare, Square, RefreshCw, UserCheck, HelpCircle, CheckCircle2, Calculator, Upload, ClipboardPaste, X } from 'lucide-react';
+import { ExamSubmission, QuestionTimingRecord } from '../../types';
+import { 
+  Trash2, ShieldCheck, AlertTriangle, Filter, Search, Award, CheckSquare, Square, 
+  RefreshCw, UserCheck, HelpCircle, CheckCircle2, Calculator, Upload, ClipboardPaste, 
+  X, Clock, Zap, BarChart2
+} from 'lucide-react';
 import { clearExamHistory, deleteHistoryEntries, getAuthToken, safeFetchJson, regradeAllSubmissionsLocally, getLocalExams, calculateScoreLocally, getApiUrl, safeSetItem, STORAGE_KEYS } from '../../services/storageService';
+
+const formatQuestionName = (key: string): string => {
+  if (key.startsWith('p1_')) {
+    return `Phần I - Câu ${key.replace('p1_', '')}`;
+  }
+  if (key.startsWith('p2_')) {
+    const parts = key.split('_');
+    return `Phần II - Câu ${parts[1]}.${(parts[2] || '').toUpperCase()}`;
+  }
+  if (key.startsWith('p3_')) {
+    return `Phần III - Câu ${key.replace('p3_', '')}`;
+  }
+  return key;
+};
 
 interface HistoryViewerProps {
   history: ExamSubmission[];
@@ -19,6 +37,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [pasteData, setPasteData] = useState('');
+  const [selectedTimingSubmission, setSelectedTimingSubmission] = useState<ExamSubmission | null>(null);
 
   // Extract unique exam titles for filter dropdown
   const uniqueExamTitles = Array.from(
@@ -440,6 +459,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
               <th className="p-3.5 border-r-2 border-[#111111]">Lớp Học</th>
               <th className="p-3.5 border-r-2 border-[#111111]">Đề Khảo Sát</th>
               <th className="p-3.5 border-r-2 border-[#111111] text-[#0F9D58]">Điểm Số</th>
+              <th className="p-3.5 border-r-2 border-[#111111] text-center">Thời Gian & Tốc Độ</th>
               <th className="p-3.5 border-r-2 border-[#111111] text-center">Giám Sát Vi Phạm</th>
               <th className="p-3.5 text-center w-24">Thao Tác</th>
             </tr>
@@ -484,6 +504,32 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
                   <td className="p-3.5 text-xl text-[#0F9D58] font-black border-r-2 border-neutral-200">
                     {h.score}
                   </td>
+                  {/* Thời Gian & Tốc Độ (Secret Teacher Telemetry) */}
+                  <td className="p-3 text-xs border-r-2 border-neutral-200" onClick={(e) => e.stopPropagation()}>
+                    {h.timing ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 font-black text-[#111111]">
+                          <Clock className="w-3.5 h-3.5 text-[#4D6BFE] shrink-0" />
+                          <span>{h.timing.formattedDuration}</span>
+                        </div>
+                        {h.timing.avgSecondsPerQuestion ? (
+                          <div className="text-[11px] font-bold text-neutral-600 flex items-center gap-1">
+                            <Zap className="w-3 h-3 text-[#FFC93C] shrink-0 fill-current" />
+                            <span>TB: {h.timing.avgSecondsPerQuestion}s/câu</span>
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTimingSubmission(h)}
+                          className="mt-1 px-2 py-0.5 bg-[#FDF6E9] hover:bg-[#FFC93C] text-[#111111] border border-[#111111] text-[10px] font-black uppercase flex items-center gap-1 shadow-[1px_1px_0px_#111111] transition-all cursor-pointer"
+                        >
+                          <BarChart2 className="w-3 h-3 text-[#4D6BFE]" /> Chi tiết tốc độ
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-neutral-400 font-bold text-[11px] italic">Chưa ghi nhận</span>
+                    )}
+                  </td>
                   <td className="p-3.5 text-center border-r-2 border-neutral-200">
                     <div className="flex justify-center">
                       <span
@@ -518,7 +564,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
 
             {filteredHistory.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-12 text-center text-neutral-600 font-bold text-xs">
+                <td colSpan={9} className="p-12 text-center text-neutral-600 font-bold text-xs">
                   Chưa có lịch sử làm bài thi nào phù hợp với bộ lọc hiện tại.
                 </td>
               </tr>
@@ -526,6 +572,161 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
           </tbody>
         </table>
       </div>
+
+      {/* Secret Question Timing Telemetry Detail Modal (Teacher Only) */}
+      {selectedTimingSubmission && selectedTimingSubmission.timing && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border-3 border-[#111111] shadow-[8px_8px_0px_#111111] max-w-3xl w-full max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b-2 border-[#111111] bg-[#FDF6E9]">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 bg-[#4D6BFE] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                    <Clock className="w-4 h-4" />
+                  </span>
+                  <h3 className="text-base sm:text-lg font-black uppercase text-[#111111]">
+                    Nhật Ký Tốc Độ & Thời Gian Làm Bài (Bí Mật - Chỉ Giáo Viên)
+                  </h3>
+                </div>
+                <p className="text-xs text-neutral-700 font-bold mt-1">
+                  Thí sinh: <strong>{selectedTimingSubmission.name}</strong> ({selectedTimingSubmission.username}) - Lớp: <strong>{selectedTimingSubmission.group || 'Khách'}</strong> | Đề: <strong>{selectedTimingSubmission.examTitle}</strong>
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedTimingSubmission(null)}
+                className="p-1.5 hover:bg-[#E63946] hover:text-white border-2 border-[#111111] bg-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Metric Summary Cards */}
+            <div className="p-4 sm:p-5 border-b-2 border-[#111111] bg-white grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 bg-[#FDF6E9] border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                <div className="text-[10px] font-black uppercase text-neutral-600">Tổng thời gian</div>
+                <div className="text-sm sm:text-base font-black text-[#4D6BFE] mt-0.5">
+                  {selectedTimingSubmission.timing.formattedDuration}
+                </div>
+                <div className="text-[10px] text-neutral-500 font-bold mt-0.5">
+                  {selectedTimingSubmission.timing.totalSeconds} giây
+                </div>
+              </div>
+
+              <div className="p-3 bg-[#FDF6E9] border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                <div className="text-[10px] font-black uppercase text-neutral-600">Tốc độ trung bình</div>
+                <div className="text-sm sm:text-base font-black text-[#0F9D58] mt-0.5">
+                  ~{selectedTimingSubmission.timing.avgSecondsPerQuestion || 0}s
+                </div>
+                <div className="text-[10px] text-neutral-500 font-bold mt-0.5">mỗi câu hỏi</div>
+              </div>
+
+              <div className="p-3 bg-[#FDF6E9] border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                <div className="text-[10px] font-black uppercase text-neutral-600">Làm nhanh nhất</div>
+                <div className="text-xs sm:text-sm font-black text-[#111111] mt-0.5 truncate" title={selectedTimingSubmission.timing.fastestQuestion ? formatQuestionName(selectedTimingSubmission.timing.fastestQuestion.question) : 'N/A'}>
+                  {selectedTimingSubmission.timing.fastestQuestion
+                    ? formatQuestionName(selectedTimingSubmission.timing.fastestQuestion.question)
+                    : 'N/A'}
+                </div>
+                <div className="text-[10px] text-[#0F9D58] font-black mt-0.5">
+                  {selectedTimingSubmission.timing.fastestQuestion ? `${selectedTimingSubmission.timing.fastestQuestion.seconds}s` : ''}
+                </div>
+              </div>
+
+              <div className="p-3 bg-[#FDF6E9] border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                <div className="text-[10px] font-black uppercase text-neutral-600">Suy nghĩ lâu nhất</div>
+                <div className="text-xs sm:text-sm font-black text-[#111111] mt-0.5 truncate" title={selectedTimingSubmission.timing.slowestQuestion ? formatQuestionName(selectedTimingSubmission.timing.slowestQuestion.question) : 'N/A'}>
+                  {selectedTimingSubmission.timing.slowestQuestion
+                    ? formatQuestionName(selectedTimingSubmission.timing.slowestQuestion.question)
+                    : 'N/A'}
+                </div>
+                <div className="text-[10px] text-[#E63946] font-black mt-0.5">
+                  {selectedTimingSubmission.timing.slowestQuestion ? `${selectedTimingSubmission.timing.slowestQuestion.seconds}s` : ''}
+                </div>
+              </div>
+            </div>
+
+            {/* Question Breakdown Table */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 custom-scroll">
+              <h4 className="text-xs font-black uppercase text-[#111111] mb-2.5 flex items-center justify-between">
+                <span>Chi tiết thời gian & tốc độ phản hồi từng câu</span>
+                <span className="text-[10px] font-bold text-neutral-500 lowercase">
+                  *được ghi nhận ngầm trong quá trình thí sinh chọn đáp án
+                </span>
+              </h4>
+
+              <div className="border-2 border-[#111111] overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[#111111] text-white font-black uppercase text-[11px]">
+                      <th className="p-2.5 border-r border-neutral-700">Câu Hỏi</th>
+                      <th className="p-2.5 border-r border-neutral-700 text-center">Thời Điểm Làm</th>
+                      <th className="p-2.5 border-r border-neutral-700 text-center">Thời Gian Nghĩ</th>
+                      <th className="p-2.5 border-r border-neutral-700 text-center">Đổi Đáp Án</th>
+                      <th className="p-2.5 text-center">Đáp Án Chọn</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y border-t border-[#111111]">
+                    {Object.entries(selectedTimingSubmission.timing.questionTimings || {}).map(([qKey, timingVal]) => {
+                      const t = timingVal as QuestionTimingRecord;
+                      const speedCategory = t.durationSeconds <= 15 ? 'fast' : t.durationSeconds <= 45 ? 'normal' : 'slow';
+                      return (
+                        <tr key={qKey} className="hover:bg-[#FDF6E9] transition-colors">
+                          <td className="p-2.5 font-black text-[#111111] border-r border-neutral-200">
+                            {formatQuestionName(qKey)}
+                          </td>
+                          <td className="p-2.5 text-center text-neutral-600 font-mono font-bold border-r border-neutral-200">
+                            {t.answeredAt ? `Phút thứ ${t.answeredAt}` : `${t.timeFromStartSeconds}s`}
+                          </td>
+                          <td className="p-2.5 text-center border-r border-neutral-200">
+                            <span className={`inline-block px-2.5 py-0.5 text-[11px] font-black border border-[#111111] shadow-[1px_1px_0px_#111111] ${
+                              speedCategory === 'fast'
+                                ? 'bg-[#0F9D58] text-white'
+                                : speedCategory === 'normal'
+                                ? 'bg-[#FFC93C] text-[#111111]'
+                                : 'bg-[#E63946] text-white'
+                            }`}>
+                              {t.durationSeconds}s
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-center font-bold text-neutral-700 border-r border-neutral-200">
+                            {t.changeCount && t.changeCount > 1 ? (
+                              <span className="text-[#E63946] font-black font-mono">{t.changeCount} lần</span>
+                            ) : (
+                              <span className="text-neutral-500 font-mono">1 lần</span>
+                            )}
+                          </td>
+                          <td className="p-2.5 text-center font-black text-[#4D6BFE]">
+                            {t.choice || '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {Object.keys(selectedTimingSubmission.timing.questionTimings || {}).length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="p-6 text-center text-neutral-500 italic">
+                          Chưa có nhật ký thời gian chi tiết cho từng câu trong bài nộp này.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t-2 border-[#111111] bg-white flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedTimingSubmission(null)}
+                className="px-5 py-2 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs font-black uppercase tracking-wider active:translate-x-[1px] active:translate-y-[1px] cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
