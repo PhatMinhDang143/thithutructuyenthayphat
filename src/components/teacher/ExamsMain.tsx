@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
-import { ExamItem } from '../../types';
+import { ExamItem, ExamSubmission } from '../../types';
 import { ExamForm } from './ExamForm';
-import { FilePlus, Edit, Trash2, Clock, Users, FileText, Calendar, Sparkles } from 'lucide-react';
-import { saveExamData, deleteExamData } from '../../services/storageService';
+import { FilePlus, Edit, Trash2, Clock, Users, FileText, Calendar, Sparkles, BarChart2, Lock, Unlock, Megaphone, Zap, CheckCircle2 } from 'lucide-react';
+import { saveExamData, deleteExamData, getLocalHistory } from '../../services/storageService';
+import { QuestionAnalyticsModal } from './QuestionAnalyticsModal';
 
 interface ExamsMainProps {
   exams: ExamItem[];
   classes: string[];
   onRefresh: () => void;
+  history?: ExamSubmission[];
 }
 
-export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh }) => {
+export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh, history }) => {
   const [editingExam, setEditingExam] = useState<ExamItem | null | 'new'>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedExamForAnalytics, setSelectedExamForAnalytics] = useState<string | null>(null);
 
   if (editingExam !== null) {
     return (
@@ -46,13 +49,48 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh 
     }
   };
 
+  const handleToggleReleaseScore = async (exam: ExamItem) => {
+    const isCurrentlyReleased = exam.questions?.score_released === true || exam.score_released === true;
+    const nextState = !isCurrentlyReleased;
+
+    const confirmMsg = nextState
+      ? `Bạn có chắc chắn muốn CÔNG BỐ ĐIỂM ĐỒNG LOẠT cho đề thi "${exam.title}"?\n\nTất cả học sinh đã nộp bài sẽ xem được điểm số và đáp án chi tiết ngay lập tức.`
+      : `Bạn có muốn TẠM KHÓA / ẨN ĐIỂM của đề thi "${exam.title}"?\n\nHọc sinh sẽ không xem được điểm cho đến khi bạn công bố lại.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    const updatedExam: ExamItem = {
+      ...exam,
+      score_released: nextState,
+      publish_score_mode: exam.questions?.publish_score_mode || exam.publish_score_mode || 'manual',
+      questions: {
+        ...(exam.questions || {}),
+        score_released: nextState,
+        publish_score_mode: exam.questions?.publish_score_mode || exam.publish_score_mode || 'manual',
+      },
+    };
+
+    const res = await saveExamData(updatedExam);
+    if (res.success) {
+      alert(nextState 
+        ? `Đã CÔNG BỐ ĐIỂM ĐỒNG LOẠT thành công cho đề "${exam.title}"!`
+        : `Đã tạm ẩn điểm cho đề "${exam.title}".`
+      );
+      onRefresh();
+    } else {
+      alert('Lỗi: ' + (res.message || 'Không thể cập nhật trạng thái công bố điểm.'));
+    }
+  };
+
+  const safeHistory = history || getLocalHistory() || [];
+
   return (
     <div className="space-y-6 text-[#111111]">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 border-3 border-[#111111] shadow-[6px_6px_0px_#111111] gap-4">
         <div>
           <h2 className="text-xl md:text-2xl font-black uppercase text-[#111111]">Kho Đề Thi & Phân Quyền Lớp</h2>
           <p className="text-xs md:text-sm text-neutral-700 font-bold mt-0.5">
-            Quản lý danh sách đề thi, cài đặt ma trận câu hỏi và chọn lớp được phép làm bài.
+            Quản lý danh sách đề thi, cài đặt ma trận câu hỏi, chọn lớp và quản lý công bố điểm đồng loạt.
           </p>
         </div>
         <button
@@ -67,6 +105,15 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh 
         {exams.map((ex) => {
           const cfg = ex.questions || {};
           const targetGroup = cfg.target_group || 'Tất cả';
+          const isManualMode = cfg.publish_score_mode === 'manual' || ex.publish_score_mode === 'manual';
+          const isScoreReleased = cfg.score_released === true || ex.score_released === true;
+          
+          // Count submissions for this exam
+          const examSubmissions = safeHistory.filter((h) => {
+            const hExam = (h.examTitle || '').trim().toLowerCase();
+            return (ex.id && h.examId === ex.id) || hExam === (ex.title || '').trim().toLowerCase();
+          });
+          const submissionCount = examSubmissions.length;
 
           return (
             <div
@@ -83,6 +130,25 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh 
                   <span className="bg-[#4D6BFE] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] px-2.5 py-1 text-[11px] font-black flex items-center gap-1 truncate max-w-[140px]">
                     <Users className="w-3.5 h-3.5" /> Lớp: {targetGroup}
                   </span>
+                </div>
+
+                {/* PUBLISH SCORE STATUS BADGE */}
+                <div className="mb-3">
+                  {isManualMode ? (
+                    isScoreReleased ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#0F9D58] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[11px] font-black uppercase">
+                        <Megaphone className="w-3.5 h-3.5" /> Đã Công Bố Điểm ({submissionCount} bài)
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#FFC93C] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[11px] font-black uppercase">
+                        <Lock className="w-3.5 h-3.5 text-[#E63946]" /> Chờ Chấm Đồng Loạt ({submissionCount} bài)
+                      </span>
+                    )
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#FDF6E9] text-neutral-800 border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[11px] font-black uppercase">
+                      <Zap className="w-3.5 h-3.5 text-[#0F9D58]" /> Điểm Tức Thì Sau Nộp ({submissionCount} bài)
+                    </span>
+                  )}
                 </div>
 
                 <h3 className="text-base font-black uppercase text-[#111111] line-clamp-2 mb-3 leading-snug">
@@ -111,19 +177,61 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh 
                     </div>
                   )}
                 </div>
+
+                {/* BATCH SCORE RELEASE BUTTON FOR MANUAL MODE */}
+                {isManualMode && (
+                  <div className="mt-3 p-3 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="text-[11px] font-black uppercase text-neutral-800 flex items-center gap-1">
+                        <Megaphone className="w-3.5 h-3.5 text-[#4D6BFE]" /> Chấm Đồng Loạt:
+                      </span>
+                      <span className={`text-[10px] font-black px-2 py-0.5 border border-[#111111] ${
+                        isScoreReleased ? 'bg-[#0F9D58] text-white' : 'bg-[#FFC93C] text-[#111111]'
+                      }`}>
+                        {isScoreReleased ? 'Đã Mở Điểm' : 'Đang Khóa'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleReleaseScore(ex)}
+                      className={`w-full py-2 px-3 text-xs font-black uppercase tracking-wider border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] flex items-center justify-center gap-1.5 transition-all ${
+                        isScoreReleased
+                          ? 'bg-neutral-100 hover:bg-[#E63946] hover:text-white text-neutral-800'
+                          : 'bg-[#0F9D58] hover:bg-[#0d854a] text-white animate-pulse hover:animate-none'
+                      }`}
+                    >
+                      {isScoreReleased ? (
+                        <>
+                          <Lock className="w-3.5 h-3.5" /> Khóa / Ẩn Lại Điểm
+                        </>
+                      ) : (
+                        <>
+                          <Megaphone className="w-3.5 h-3.5" /> Công Bố Điểm Đồng Loạt ({submissionCount} Học Sinh)
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 border-t-2 border-[#111111] pt-4 mt-6">
                 <button
                   onClick={() => setEditingExam(ex)}
-                  className="flex-1 py-3 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all"
+                  className="flex-1 py-3 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
                   <Edit className="w-3.5 h-3.5" /> Sửa & Phân Lớp
                 </button>
                 <button
+                  onClick={() => setSelectedExamForAnalytics(ex.id)}
+                  className="px-3 py-3 bg-[#00E599] hover:bg-[#00c784] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  title="Xem phân tích câu đúng nhiều / sai nhiều của đề này"
+                >
+                  <BarChart2 className="w-3.5 h-3.5" /> Phân Tích
+                </button>
+                <button
                   onClick={() => handleDeleteExam(ex.id, ex.title)}
                   disabled={isDeleting}
-                  className="w-11 h-11 flex items-center justify-center bg-white text-[#E63946] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] hover:bg-[#E63946] hover:text-white active:translate-x-[1px] active:translate-y-[1px] transition-all disabled:opacity-50"
+                  className="w-11 h-11 flex items-center justify-center bg-white text-[#E63946] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] hover:bg-[#E63946] hover:text-white active:translate-x-[1px] active:translate-y-[1px] transition-all disabled:opacity-50 cursor-pointer"
                   title="Xóa đề thi"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -139,6 +247,18 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh 
           </div>
         )}
       </div>
+
+      {/* Question Analytics Modal */}
+      {selectedExamForAnalytics && (
+        <QuestionAnalyticsModal
+          isOpen={Boolean(selectedExamForAnalytics)}
+          onClose={() => setSelectedExamForAnalytics(null)}
+          exams={exams}
+          history={history || getLocalHistory()}
+          availableClasses={classes}
+          initialExamId={selectedExamForAnalytics}
+        />
+      )}
     </div>
   );
 };

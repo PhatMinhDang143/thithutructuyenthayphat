@@ -63,14 +63,29 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   });
 
   // Calculate personal student statistics
+  const checkIsExamScorePending = (targetExam?: ExamItem, sub?: ExamSubmission) => {
+    let examObj = targetExam;
+    if (!examObj && sub) {
+      examObj = safeExams.find(
+        (e) => (e.id && e.id === sub.examId) || (e.title && e.title.trim().toLowerCase() === (sub.examTitle || '').trim().toLowerCase())
+      );
+    }
+    if (!examObj) return false;
+    const cfg = examObj.questions || {};
+    const isManual = cfg.publish_score_mode === 'manual' || examObj.publish_score_mode === 'manual';
+    const isReleased = cfg.score_released === true || examObj.score_released === true;
+    return isManual && !isReleased;
+  };
+
+  const releasedSubmissions = mySubmissions.filter((s) => !checkIsExamScorePending(undefined, s));
   const totalSubmissions = mySubmissions.length;
-  const averageScore = totalSubmissions > 0
-    ? Number((mySubmissions.reduce((acc, cur) => acc + (Number(cur.score) || 0), 0) / totalSubmissions).toFixed(2))
+  const averageScore = releasedSubmissions.length > 0
+    ? Number((releasedSubmissions.reduce((acc, cur) => acc + (Number(cur.score) || 0), 0) / releasedSubmissions.length).toFixed(2))
     : 0;
-  const bestScore = totalSubmissions > 0
-    ? Math.max(...mySubmissions.map((s) => Number(s.score) || 0))
+  const bestScore = releasedSubmissions.length > 0
+    ? Math.max(...releasedSubmissions.map((s) => Number(s.score) || 0))
     : 0;
-  const passCount = mySubmissions.filter((s) => (Number(s.score) || 0) >= 5.0).length;
+  const passCount = releasedSubmissions.filter((s) => (Number(s.score) || 0) >= 5.0).length;
 
   const filteredMyHistory = mySubmissions.filter((h) => {
     if (!historySearch.trim()) return true;
@@ -227,7 +242,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                   >
                     <div>
                       {/* Top Tag Badges */}
-                      <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <span className="bg-[#FDF6E9] text-[#111111] px-2.5 py-1 text-[11px] font-black border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
                           {cfg.exam_type === 'custom'
                             ? `Tùy biến (${cfg.num_p1 || 0}-${cfg.num_p2 || 0}-${cfg.num_p3 || 0})`
@@ -239,38 +254,83 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                         </span>
                       </div>
 
+                      {/* Manual score mode badge */}
+                      {cfg.publish_score_mode === 'manual' && (
+                        <div className="mb-2.5">
+                          {cfg.score_released ? (
+                            <span className="inline-flex items-center gap-1 bg-[#0F9D58] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] px-2 py-0.5 text-[10px] font-black uppercase">
+                              <CheckCircle2 className="w-3 h-3" /> Đã Mở Điểm
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 bg-[#FFC93C] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] px-2 py-0.5 text-[10px] font-black uppercase">
+                              <Lock className="w-3 h-3 text-[#E63946]" /> Chờ Chấm Đồng Loạt
+                            </span>
+                          )}
+                        </div>
+                      )}
+
                       <h3 className="text-base sm:text-lg font-black text-[#111111] uppercase line-clamp-2 mb-3 leading-snug">
                         {exam.title}
                       </h3>
 
                       {/* Prominent Score Card if user has taken this exam */}
-                      {attemptCount > 0 && latestAttempt && (
-                        <div className="mb-4 p-3 bg-[#FFF9E6] border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
-                          <div className="flex items-center justify-between gap-2 mb-1.5 pb-1.5 border-b border-[#111111]">
-                            <span className="text-[11px] font-black uppercase text-neutral-800 flex items-center gap-1">
-                              <Award className="w-3.5 h-3.5 text-[#4D6BFE]" /> Điểm cao nhất:
-                            </span>
-                            <span className={`text-xs font-black px-2 py-0.5 border border-[#111111] ${getScoreBadgeColor(examBestScore || 0)}`}>
-                              {examBestScore} / 10
-                            </span>
+                      {attemptCount > 0 && latestAttempt && (() => {
+                        const isScorePending = checkIsExamScorePending(exam);
+                        if (isScorePending) {
+                          return (
+                            <div className="mb-4 p-3 bg-[#FFF9E6] border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+                              <div className="flex items-center justify-between gap-2 mb-1.5 pb-1.5 border-b border-[#111111]">
+                                <span className="text-[11px] font-black uppercase text-neutral-800 flex items-center gap-1">
+                                  <Lock className="w-3.5 h-3.5 text-[#E63946]" /> Trạng thái bài thi:
+                                </span>
+                                <span className="text-[10px] font-black px-2 py-0.5 border border-[#111111] bg-[#FFC93C] text-[#111111]">
+                                  Đã Nộp • Đang Khóa Điểm
+                                </span>
+                              </div>
+                              <p className="text-[11px] font-bold text-neutral-700 leading-tight">
+                                Bài thi đã được ghi nhận. Đang chờ Giáo viên xác nhận chấm đồng loạt.
+                              </p>
+                              {onViewResult && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenResult(latestAttempt)}
+                                  className="w-full mt-2 py-1.5 px-2 bg-white hover:bg-[#FFC93C] text-[#111111] border-2 border-[#111111] text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px]"
+                                >
+                                  <Lock className="w-3.5 h-3.5 text-[#E63946]" /> Xem Thông Tin Nộp Bài
+                                </button>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="mb-4 p-3 bg-[#FFF9E6] border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+                            <div className="flex items-center justify-between gap-2 mb-1.5 pb-1.5 border-b border-[#111111]">
+                              <span className="text-[11px] font-black uppercase text-neutral-800 flex items-center gap-1">
+                                <Award className="w-3.5 h-3.5 text-[#4D6BFE]" /> Điểm cao nhất:
+                              </span>
+                              <span className={`text-xs font-black px-2 py-0.5 border border-[#111111] ${getScoreBadgeColor(examBestScore || 0)}`}>
+                                {examBestScore} / 10
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] font-bold text-neutral-700">
+                              <span>Lần gần nhất: <strong className="text-[#111111]">{latestAttempt.score}đ</strong> ({latestAttempt.correct} câu đúng)</span>
+                              <span className="text-[10px] text-neutral-600 font-mono">{latestAttempt.submitted_at?.split(' ')[0]}</span>
+                            </div>
+                            
+                            {/* Quick View Result Link Button */}
+                            {onViewResult && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenResult(latestAttempt)}
+                                className="w-full mt-2 py-1.5 px-2 bg-white hover:bg-[#FFC93C] text-[#111111] border-2 border-[#111111] text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px]"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-[#4D6BFE]" /> Xem Lại Bài Làm & Điểm Số
+                              </button>
+                            )}
                           </div>
-                          <div className="flex items-center justify-between text-[11px] font-bold text-neutral-700">
-                            <span>Lần gần nhất: <strong className="text-[#111111]">{latestAttempt.score}đ</strong> ({latestAttempt.correct} câu đúng)</span>
-                            <span className="text-[10px] text-neutral-600 font-mono">{latestAttempt.submitted_at?.split(' ')[0]}</span>
-                          </div>
-                          
-                          {/* Quick View Result Link Button */}
-                          {onViewResult && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenResult(latestAttempt)}
-                              className="w-full mt-2 py-1.5 px-2 bg-white hover:bg-[#FFC93C] text-[#111111] border-2 border-[#111111] text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px]"
-                            >
-                              <Eye className="w-3.5 h-3.5 text-[#4D6BFE]" /> Xem Lại Bài Làm & Điểm Số
-                            </button>
-                          )}
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       {/* Metadata details */}
                       <div className="space-y-2 text-xs font-bold text-neutral-800 mb-5 bg-[#FDF6E9] p-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
@@ -442,6 +502,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                         const matchedExam = safeExams.find(
                           (e) => (e.id && e.id === sub.examId) || (e.title && e.title.trim().toLowerCase() === (sub.examTitle || '').trim().toLowerCase())
                         );
+                        const isScorePending = checkIsExamScorePending(matchedExam, sub);
 
                         return (
                           <tr key={sub.id || idx} className="hover:bg-[#FFF9E6] transition-colors">
@@ -451,12 +512,22 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                               <span className="text-[10px] text-neutral-600 font-bold">Lớp dự thi: {sub.group || user.group}</span>
                             </td>
                             <td className="p-3 border-r-2 border-[#111111] text-center">
-                              <span className={`inline-block px-3 py-1 font-black text-xs sm:text-sm border-2 border-[#111111] shadow-[2px_2px_0px_#111111] ${getScoreBadgeColor(scoreNum)}`}>
-                                {scoreNum} / 10
-                              </span>
+                              {isScorePending ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 font-black text-xs border-2 border-[#111111] shadow-[2px_2px_0px_#111111] bg-[#FFC93C] text-[#111111]">
+                                  <Lock className="w-3 h-3 text-[#E63946]" /> Chờ Công Bố
+                                </span>
+                              ) : (
+                                <span className={`inline-block px-3 py-1 font-black text-xs sm:text-sm border-2 border-[#111111] shadow-[2px_2px_0px_#111111] ${getScoreBadgeColor(scoreNum)}`}>
+                                  {scoreNum} / 10
+                                </span>
+                              )}
                             </td>
                             <td className="p-3 border-r-2 border-[#111111] text-center font-black">
-                              <span className="text-[#0F9D58]">{sub.correct} câu đúng</span>
+                              {isScorePending ? (
+                                <span className="text-neutral-500 font-bold text-xs italic">Đang niêm phong</span>
+                              ) : (
+                                <span className="text-[#0F9D58]">{sub.correct} câu đúng</span>
+                              )}
                             </td>
                             <td className="p-3 border-r-2 border-[#111111] text-center font-mono text-xs text-neutral-700">
                               {sub.submitted_at}
@@ -466,9 +537,21 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => handleOpenResult(sub)}
-                                  className="w-full px-2.5 py-1.5 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] text-xs font-black uppercase flex items-center justify-center gap-1 transition-all"
+                                  className={`w-full px-2.5 py-1.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] text-xs font-black uppercase flex items-center justify-center gap-1 transition-all ${
+                                    isScorePending
+                                      ? 'bg-[#FDF6E9] hover:bg-[#FFC93C] text-[#111111]'
+                                      : 'bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111]'
+                                  }`}
                                 >
-                                  <Eye className="w-3.5 h-3.5" /> Xem Chi Tiết
+                                  {isScorePending ? (
+                                    <>
+                                      <Lock className="w-3.5 h-3.5 text-[#E63946]" /> Xem Bài Nộp
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Eye className="w-3.5 h-3.5" /> Xem Chi Tiết
+                                    </>
+                                  )}
                                 </button>
                               ) : (
                                 <span className="text-xs text-neutral-500 font-black">Đã lưu</span>

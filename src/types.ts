@@ -16,6 +16,8 @@ export interface ExamQuestionsConfig {
   explain_link?: string;
   target_group?: string; // Lớp/Nhóm được phép làm bài (e.g. "Tất cả", "12A1", "12A1, 12A2")
   max_attempts?: number; // Số lần làm bài tối đa (0 hoặc undefined = không giới hạn, 1 = 1 lần, 2 = 2 lần,...)
+  publish_score_mode?: 'instant' | 'manual'; // 'instant': Công bố điểm ngay sau khi làm xong, 'manual': Chờ giáo viên xác nhận chấm đồng loạt
+  score_released?: boolean; // true nếu giáo viên đã bấm công bố điểm đồng loạt cho đề này
 }
 
 export interface AnswerKeyPart1 {
@@ -48,6 +50,8 @@ export interface ExamItem {
   questions: ExamQuestionsConfig;
   answers?: AnswerKeys; // Protected: Stripped on server for students, provided only for teachers or inside graded submissions
   updatedAt?: number; // epoch timestamp in ms
+  publish_score_mode?: 'instant' | 'manual';
+  score_released?: boolean;
 }
 
 export interface StudentAnswers {

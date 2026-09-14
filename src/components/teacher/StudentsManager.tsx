@@ -127,12 +127,12 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
   });
 
   return (
-    <div className="bg-white border-3 border-[#111111] shadow-[6px_6px_0px_#111111] overflow-hidden flex flex-col h-full space-y-6 text-[#111111]">
+    <div className="bg-white border-2 sm:border-3 border-[#111111] shadow-[4px_4px_0px_#111111] sm:shadow-[6px_6px_0px_#111111] overflow-hidden flex flex-col h-full space-y-4 sm:space-y-6 text-[#111111]">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-6 border-b-2 border-[#111111] gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-3.5 sm:p-6 border-b-2 border-[#111111] gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl md:text-2xl font-black uppercase text-[#111111]">Xác Thực & Phân Lớp Học Viên</h2>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-black uppercase text-[#111111]">Xác Thực & Phân Lớp Học Viên</h2>
             <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#48BB78]/20 text-[#2F855A] border border-[#2F855A] text-[11px] font-black uppercase rounded-full">
               <RefreshCw className="w-3 h-3 animate-spin" style={{ animationDuration: '6s' }} /> Đồng Bộ 2 Chiều
             </span>
@@ -152,21 +152,22 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
             onClick={handleManualSync}
             disabled={isSyncing}
             title="Kéo dữ liệu học sinh mới nhất từ Google Sheet về Web"
-            className="px-4 py-3 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+            className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 sm:py-3 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 text-[#4D6BFE] ${isSyncing ? 'animate-spin' : ''}`} />
-            {isSyncing ? 'Đang kéo Sheet...' : 'Đồng Bộ Từ Google Sheet'}
+            <span className="hidden xs:inline">{isSyncing ? 'Đang kéo...' : 'Kéo Từ Google Sheet'}</span>
+            <span className="xs:hidden">Kéo Sheet</span>
           </button>
           <button
             onClick={handleAddRow}
-            className="px-4 py-3 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all"
+            className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 sm:py-3 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all"
           >
-            <UserPlus className="w-4 h-4 text-[#4D6BFE]" /> Thêm Ô Học Sinh
+            <UserPlus className="w-4 h-4 text-[#4D6BFE]" /> Thêm Ô HS
           </button>
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="px-5 py-3 bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+            className="w-full sm:w-auto px-4 sm:px-5 py-2.5 sm:py-3 bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {isSaving ? 'Đang lưu...' : 'Lưu Tất Cả & Cập Nhật Sheet'}
@@ -175,16 +176,16 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
       </div>
 
       {/* Class Filter Bar */}
-      <div className="px-6 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#FDF6E9] p-4 mx-6 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#FDF6E9] p-3 sm:p-4 mx-3 sm:mx-6 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
         <div className="flex items-center gap-2 flex-wrap">
           <Filter className="w-4 h-4 text-[#4D6BFE]" />
           <span className="text-xs font-black text-[#111111] uppercase">Lọc Danh Sách Theo Lớp:</span>
-          <div className="flex flex-wrap gap-1.5 ml-2">
+          <div className="flex flex-wrap gap-1.5">
             {classes.map((clsName) => (
               <button
                 key={clsName}
                 onClick={() => setSelectedClassFilter(clsName)}
-                className={`px-3 py-1 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
+                className={`px-2.5 py-1 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
                   selectedClassFilter === clsName
                     ? 'bg-[#4D6BFE] text-white shadow-[2px_2px_0px_#111111]'
                     : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
@@ -202,8 +203,8 @@ export const StudentsManager: React.FC<StudentsManagerProps> = ({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto flex-1 custom-scroll px-6 pb-6">
-        <table className="w-full text-left border-collapse border-2 border-[#111111]">
+      <div className="overflow-x-auto flex-1 custom-scroll px-3 sm:px-6 pb-4 sm:pb-6">
+        <table className="w-full min-w-[620px] text-left border-collapse border-2 border-[#111111]">
           <thead>
             <tr className="text-xs uppercase tracking-wider font-black text-[#111111] bg-[#FDF6E9] border-b-2 border-[#111111]">
               <th className="p-3.5 w-40 border-r-2 border-[#111111]">Tài Khoản (SBD)</th>

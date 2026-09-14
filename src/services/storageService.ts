@@ -592,6 +592,8 @@ export const uploadPdfToGoogleDrive = async (
 // 1. Fetches from /api/all (Instant Server-side Central Database shared across all browsers)
 // 2. Fetches from Google Apps Script (Long-term Cloud Sheet backup)
 // 3. Merges with local storage, ensuring newer remote edits (like deadline / config updates) always take precedence!
+export const normalizeExamTitle = (t?: string): string => (t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
 export const fetchAllData = async (
   userRole?: 'student' | 'teacher' | 'guest'
 ): Promise<{
@@ -739,9 +741,23 @@ export const fetchAllData = async (
       finalFile = existingFileLink;
     }
 
+    const existingEntry = combinedMap.get(gEx.id) || local;
+    const gHasAnswers = gEx.answers && (
+      (gEx.answers.p1 && Object.keys(gEx.answers.p1).length > 0) ||
+      (gEx.answers.p2 && Object.keys(gEx.answers.p2).length > 0) ||
+      (gEx.answers.p3 && Object.keys(gEx.answers.p3).length > 0)
+    );
+    const existingHasAnswers = existingEntry?.answers && (
+      (existingEntry.answers.p1 && Object.keys(existingEntry.answers.p1).length > 0) ||
+      (existingEntry.answers.p2 && Object.keys(existingEntry.answers.p2).length > 0) ||
+      (existingEntry.answers.p3 && Object.keys(existingEntry.answers.p3).length > 0)
+    );
+    const resolvedGasAnswers = gHasAnswers ? gEx.answers : (existingHasAnswers ? existingEntry.answers : (gEx.answers || existingEntry?.answers));
+
     combinedMap.set(gEx.id, {
       ...gEx,
       duration: Number(gEx.duration) || 45,
+      answers: resolvedGasAnswers,
       questions: {
         ...(gEx.questions || {}),
         file_link: finalFile,
@@ -762,9 +778,23 @@ export const fetchAllData = async (
       finalFile = existingFileLink;
     }
 
+    const currentCombined = combinedMap.get(sEx.id) || local;
+    const sHasAnswers = sEx.answers && (
+      (sEx.answers.p1 && Object.keys(sEx.answers.p1).length > 0) ||
+      (sEx.answers.p2 && Object.keys(sEx.answers.p2).length > 0) ||
+      (sEx.answers.p3 && Object.keys(sEx.answers.p3).length > 0)
+    );
+    const currHasAnswers = currentCombined?.answers && (
+      (currentCombined.answers.p1 && Object.keys(currentCombined.answers.p1).length > 0) ||
+      (currentCombined.answers.p2 && Object.keys(currentCombined.answers.p2).length > 0) ||
+      (currentCombined.answers.p3 && Object.keys(currentCombined.answers.p3).length > 0)
+    );
+    const resolvedServerAnswers = sHasAnswers ? sEx.answers : (currHasAnswers ? currentCombined.answers : sEx.answers);
+
     combinedMap.set(sEx.id, {
       ...sEx,
       duration: Number(sEx.duration) || 45,
+      answers: resolvedServerAnswers,
       questions: {
         ...(sEx.questions || {}),
         file_link: finalFile,
@@ -834,7 +864,6 @@ export const fetchAllData = async (
   }
 
   const historyMap = new Map<string, ExamSubmission>();
-  const normalizeExamTitle = (t?: string) => (t || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
   // Process in order: Local -> GAS -> Server (Server has highest authority for graded results)
   [...localHistory, ...gasHistory, ...serverHistory].forEach((h) => {
@@ -931,11 +960,28 @@ export const saveExamData = async (
         ? examPayload.questions.explain_link
         : existing.questions?.explain_link || '';
 
+    const payloadHasAnswers = examPayload.answers && (
+      (examPayload.answers.p1 && Object.keys(examPayload.answers.p1).length > 0) ||
+      (examPayload.answers.p2 && Object.keys(examPayload.answers.p2).length > 0) ||
+      (examPayload.answers.p3 && Object.keys(examPayload.answers.p3).length > 0)
+    );
+    const existingHasAnswers = existing.answers && (
+      (existing.answers.p1 && Object.keys(existing.answers.p1).length > 0) ||
+      (existing.answers.p2 && Object.keys(existing.answers.p2).length > 0) ||
+      (existing.answers.p3 && Object.keys(existing.answers.p3).length > 0)
+    );
+    const finalAnswers = (!payloadHasAnswers && existingHasAnswers && !(examPayload as any).clearAnswers)
+      ? existing.answers
+      : (examPayload.answers || existing.answers);
+
+    examPayload.answers = finalAnswers;
+
     localExams[idx] = {
       ...existing,
       ...examPayload,
       updatedAt: now,
       duration: Number(examPayload.duration) || 45,
+      answers: finalAnswers,
       questions: {
         ...(existing.questions || {}),
         ...(examPayload.questions || {}),

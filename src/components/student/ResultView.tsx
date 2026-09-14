@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { AppUser, ExamItem, ExamSubmission } from '../../types';
 import { 
   Trophy, CheckCircle, XCircle, ArrowLeft, FileText, CheckSquare, 
-  Award, Lock, ExternalLink, AlertTriangle, Filter, Eye, Sparkles, BookOpen
+  Award, Lock, ExternalLink, AlertTriangle, Filter, Eye, Sparkles, BookOpen, Clock, ShieldCheck
 } from 'lucide-react';
 import { normalizePdfUrl } from '../../utils/pdfUtils';
 
@@ -142,6 +142,103 @@ export const ResultView: React.FC<ResultViewProps> = ({
 
   const totalQuestions = p1Questions.length + p2Questions.length + p3Questions.length;
 
+  const isManualMode = cfg.publish_score_mode === 'manual' || exam.publish_score_mode === 'manual';
+  const isScoreReleased = cfg.score_released === true || exam.score_released === true;
+  const isScorePending = isManualMode && !isScoreReleased && user.role !== 'teacher';
+
+  if (isScorePending) {
+    return (
+      <div className="max-w-4xl mx-auto p-4 md:p-8 min-h-[calc(100dvh-80px)] flex flex-col justify-between text-[#111111]">
+        <div>
+          {/* Header */}
+          <header className="mb-6 bg-white border-3 border-[#111111] p-6 text-center shadow-[6px_6px_0px_#111111]">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-[#FFC93C] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs font-black uppercase mb-3">
+              <Lock className="w-4 h-4 text-[#E63946]" /> Đã Ghi Nhận Bài Thi • Niêm Phong Chờ Chấm Đồng Loạt
+            </div>
+            <h1 className="text-2xl md:text-3xl font-black uppercase tracking-tight text-[#111111] mb-2">
+              NỘP BÀI THI THÀNH CÔNG
+            </h1>
+            <p className="text-sm sm:text-base text-[#4D6BFE] font-black uppercase tracking-wide bg-[#FDF6E9] py-1.5 px-4 inline-block border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+              {exam.title}
+            </p>
+          </header>
+
+          {/* Submission Info Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4 mb-6">
+            <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111]">
+              <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Trạng Thái</p>
+              <p className="text-base sm:text-lg font-black text-[#0F9D58] mt-1">ĐÃ LƯU BÀI</p>
+              <span className="text-[10px] font-black uppercase text-neutral-500">An toàn trên máy chủ</span>
+            </div>
+            <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111]">
+              <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Thời Gian Làm</p>
+              <p className="text-base sm:text-lg font-black text-[#4D6BFE] mt-1">
+                {resultData.timing?.formattedDuration || `${exam.duration} phút`}
+              </p>
+              <span className="text-[10px] font-black uppercase text-neutral-500">Thời gian làm bài</span>
+            </div>
+            <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111]">
+              <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Thời Gian Nộp</p>
+              <p className="text-xs sm:text-sm font-black text-[#111111] mt-1 truncate">
+                {resultData.submitted_at || 'Vừa xong'}
+              </p>
+              <span className="text-[10px] font-black uppercase text-neutral-500">Giờ máy chủ</span>
+            </div>
+            <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111]">
+              <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Cảnh Báo</p>
+              <p className={`text-base sm:text-lg font-black mt-1 ${resultData.cheat && String(resultData.cheat) !== '0 lần' ? 'text-[#E63946]' : 'text-[#0F9D58]'}`}>
+                {resultData.cheat || '0 lần'}
+              </p>
+              <span className="text-[10px] font-black uppercase text-neutral-500">Rời màn hình</span>
+            </div>
+          </div>
+
+          {/* Sealed Score Announcement Notice */}
+          <div className="bg-[#FFF9E6] border-3 border-[#111111] p-6 sm:p-8 shadow-[6px_6px_0px_#111111] mb-6 space-y-4">
+            <div className="flex items-center gap-3 border-b-2 border-[#111111] pb-3">
+              <div className="w-10 h-10 bg-[#FFC93C] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] flex items-center justify-center shrink-0">
+                <Lock className="w-5 h-5 text-[#111111]" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-black uppercase text-[#111111]">
+                  Chế Độ Chờ Giáo Viên Xác Nhận Chấm Đồng Loạt
+                </h3>
+                <p className="text-xs text-neutral-700 font-bold">
+                  Quy chế bảo mật kết quả thi tập trung
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 text-xs sm:text-sm text-neutral-800 font-bold leading-relaxed">
+              <p>
+                Bài làm của bạn <strong>{user.name}</strong> (Lớp {user.group || 'Khách'}) đã được hệ thống ghi nhận và niêm phong an toàn.
+              </p>
+              <p>
+                Đề thi này được giáo viên cấu hình <strong>không công bố điểm ngay sau khi làm</strong> để đảm bảo tính công bằng và bảo mật giữa các thí sinh.
+              </p>
+              <p className="text-[#E63946]">
+                * Điểm số chính thức và đáp án chi tiết sẽ được công bố đồng loạt sau khi tất cả học sinh hoàn thành bài thi và được Giáo viên xác nhận mở điểm.
+              </p>
+            </div>
+
+            <div className="pt-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#4D6BFE] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs font-black">
+                <Clock className="w-3.5 h-3.5" /> Vui lòng theo dõi thông báo từ Giáo viên để xem điểm thi!
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={onBackToLobby}
+          className="w-full bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] py-4 border-3 border-[#111111] shadow-[5px_5px_0px_#111111] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[2px_2px_0px_#111111] font-black uppercase transition-all tracking-wider flex items-center justify-center gap-2 cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" /> Quay Về Phòng Chờ Đề Thi
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-5xl mx-auto p-4 md:p-8 min-h-[calc(100dvh-80px)] flex flex-col justify-between text-[#111111]">
       <div>
@@ -158,31 +255,97 @@ export const ResultView: React.FC<ResultViewProps> = ({
           </p>
         </header>
 
-        {/* Score Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4 mb-6">
-          <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111]">
-            <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Điểm Số</p>
-            <p className="text-3xl md:text-4xl font-black text-[#4D6BFE]">{resultData.score}</p>
-            <span className="text-[10px] font-black uppercase text-neutral-500">Thang điểm 10</span>
-          </div>
-          <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111]">
-            <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Số Câu Đúng</p>
-            <p className="text-3xl md:text-4xl font-black text-[#0F9D58]">{resultData.correct}</p>
-            <span className="text-[10px] font-black uppercase text-neutral-500">/{totalQuestions} câu hỏi</span>
-          </div>
-          <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111]">
-            <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Thời Gian Nộp</p>
-            <p className="text-sm md:text-base font-black text-[#111111] mt-2 truncate">{resultData.submitted_at || 'Vừa xong'}</p>
-            <span className="text-[10px] font-black uppercase text-neutral-500">Hệ thống ghi nhận</span>
-          </div>
-          <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111]">
-            <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Cảnh Báo</p>
-            <p className={`text-3xl md:text-4xl font-black ${resultData.cheat && String(resultData.cheat) !== '0 lần' ? 'text-[#E63946]' : 'text-neutral-600'}`}>
-              {resultData.cheat || '0 lần'}
-            </p>
-            <span className="text-[10px] font-black uppercase text-neutral-500">Chuyển tab / Rời màn hình</span>
-          </div>
-        </div>
+        {/* Score Cards & Key Statistics */}
+        {(() => {
+          const scoreNum = Number(resultData.score) || 0;
+          const isPassed = scoreNum >= 5.0;
+          const correctNum = Number(resultData.correct) || 0;
+          const wrongNum = Math.max(0, totalQuestions - correctNum);
+          const durationStr = resultData.timing?.formattedDuration || (resultData.timing?.totalSeconds ? `${Math.floor(resultData.timing.totalSeconds / 60)} phút ${resultData.timing.totalSeconds % 60} giây` : `${exam.duration} phút`);
+          const submittedAtStr = resultData.submitted_at || 'Vừa xong';
+
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4 mb-6">
+              {/* 1. Điểm số & Xếp loại */}
+              <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111] flex flex-col justify-between">
+                <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Điểm Số</p>
+                <div>
+                  <p className="text-3xl md:text-4xl font-black text-[#4D6BFE]">{resultData.score}</p>
+                  <div className="mt-1">
+                    <span className={`inline-block px-2 py-0.5 text-[10px] font-black uppercase border border-[#111111] shadow-[1px_1px_0px_#111111] ${
+                      isPassed ? 'bg-[#0F9D58] text-white' : 'bg-[#E63946] text-white'
+                    }`}>
+                      {isPassed ? 'ĐẠT (≥ 5.0)' : 'CHƯA ĐẠT (< 5.0)'}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-black uppercase text-neutral-500 mt-1">Thang điểm 10</span>
+              </div>
+
+              {/* 2. Số câu đúng */}
+              <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111] flex flex-col justify-between">
+                <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Số Câu Đúng</p>
+                <div>
+                  <p className="text-3xl md:text-4xl font-black text-[#0F9D58]">{correctNum}</p>
+                  <p className="text-[10px] text-[#0F9D58] font-black mt-1">
+                    {totalQuestions > 0 ? `${Math.round((correctNum / totalQuestions) * 100)}% chính xác` : ''}
+                  </p>
+                </div>
+                <span className="text-[10px] font-black uppercase text-neutral-500">/{totalQuestions} câu hỏi</span>
+              </div>
+
+              {/* 3. Số câu sai */}
+              <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111] flex flex-col justify-between">
+                <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Số Câu Sai</p>
+                <div>
+                  <p className={`text-3xl md:text-4xl font-black ${wrongNum > 0 ? 'text-[#E63946]' : 'text-neutral-700'}`}>
+                    {wrongNum}
+                  </p>
+                  <p className="text-[10px] text-neutral-600 font-bold mt-1">
+                    {wrongNum === 0 ? 'Xuất sắc 100%' : 'Cần xem lại'}
+                  </p>
+                </div>
+                <span className="text-[10px] font-black uppercase text-neutral-500">/{totalQuestions} câu hỏi</span>
+              </div>
+
+              {/* 4. Thời gian làm bài */}
+              <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111] flex flex-col justify-between">
+                <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Thời Gian Làm</p>
+                <div className="my-auto py-1">
+                  <p className="text-sm md:text-base font-black text-[#111111] leading-tight">
+                    {durationStr}
+                  </p>
+                  <span className="text-[10px] text-neutral-500 font-bold">Thời gian hoàn thành</span>
+                </div>
+                <span className="text-[10px] font-black uppercase text-neutral-500">Quy định: {exam.duration}p</span>
+              </div>
+
+              {/* 5. Thời gian nộp */}
+              <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111] flex flex-col justify-between">
+                <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Thời Gian Nộp</p>
+                <div className="my-auto py-1">
+                  <p className="text-xs md:text-sm font-black text-[#111111] leading-tight break-words">
+                    {submittedAtStr}
+                  </p>
+                  <span className="text-[10px] text-[#0F9D58] font-black">Hệ thống đã lưu</span>
+                </div>
+                <span className="text-[10px] font-black uppercase text-neutral-500">Giờ máy chủ</span>
+              </div>
+
+              {/* 6. Cảnh báo vi phạm */}
+              <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111] flex flex-col justify-between">
+                <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Cảnh Báo</p>
+                <div>
+                  <p className={`text-3xl md:text-4xl font-black ${resultData.cheat && String(resultData.cheat) !== '0 lần' ? 'text-[#E63946]' : 'text-neutral-700'}`}>
+                    {resultData.cheat || '0 lần'}
+                  </p>
+                  <p className="text-[10px] text-neutral-500 font-bold mt-1">Giám sát bài thi</p>
+                </div>
+                <span className="text-[10px] font-black uppercase text-neutral-500">Rời màn hình</span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Detailed Answer Key & Explanations Section */}
         <div className="bg-white border-3 border-[#111111] p-4 sm:p-7 shadow-[6px_6px_0px_#111111] mb-8">

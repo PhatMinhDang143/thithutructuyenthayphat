@@ -3,13 +3,30 @@ import { ExamItem, AnswerKeyPart1, AnswerKeyPart2, AnswerKeyPart3 } from '../../
 import { 
   FilePlus, Save, Loader2, UploadCloud, Clock, Timer, Users, Layers, 
   AlertCircle, FileCheck, CheckCircle2, X, ExternalLink, Eye, Info, Link as LinkIcon, Trash2, Cloud, Sparkles, RefreshCw,
-  FileSpreadsheet, Download, Zap, RotateCcw
+  FileSpreadsheet, Download, Zap, RotateCcw, Lock, Unlock, Megaphone
 } from 'lucide-react';
 import { normalizePdfUrl, validatePdfInput } from '../../utils/pdfUtils';
 import { PdfViewer } from '../common/PdfViewer';
-import { uploadPdfToGoogleDrive, getApiUrl } from '../../services/storageService';
+import { uploadPdfToGoogleDrive, getApiUrl, getLocalExams, getAuthHeaders } from '../../services/storageService';
 import { QuickAnswerModal } from './QuickAnswerModal';
 import { downloadSampleExcelTemplate } from '../../utils/answerParser';
+
+function parseFlexibleAnswers(rawAnswers: any): { p1: AnswerKeyPart1; p2: AnswerKeyPart2; p3: AnswerKeyPart3 } {
+  if (!rawAnswers) return { p1: {}, p2: {}, p3: {} };
+  let ans = rawAnswers;
+  if (typeof ans === 'string') {
+    try {
+      ans = JSON.parse(ans);
+    } catch (e) {
+      return { p1: {}, p2: {}, p3: {} };
+    }
+  }
+  return {
+    p1: (ans.p1 && typeof ans.p1 === 'object') ? ans.p1 : {},
+    p2: (ans.p2 && typeof ans.p2 === 'object') ? ans.p2 : {},
+    p3: (ans.p3 && typeof ans.p3 === 'object') ? ans.p3 : {},
+  };
+}
 
 interface ExamFormProps {
   initialData: ExamItem | null;
@@ -40,6 +57,16 @@ export const ExamForm: React.FC<ExamFormProps> = ({
     initialData?.questions?.max_attempts !== undefined ? Number(initialData.questions.max_attempts) : 0
   );
 
+  // PUBLISH SCORE MODE (Chế độ công bố điểm: instant = tức thì sau khi nộp, manual = chờ GV bấm công bố đồng loạt)
+  const [publishScoreMode, setPublishScoreMode] = useState<'instant' | 'manual'>(
+    initialData?.questions?.publish_score_mode || initialData?.publish_score_mode || 'instant'
+  );
+  const [scoreReleased, setScoreReleased] = useState<boolean>(
+    initialData?.questions?.score_released !== undefined
+      ? !!initialData.questions.score_released
+      : (initialData?.score_released !== undefined ? !!initialData.score_released : false)
+  );
+
   const [startTime, setStartTime] = useState(initialData?.questions?.start_time || '');
   const [endTime, setEndTime] = useState(initialData?.questions?.end_time || '');
 
@@ -68,17 +95,60 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   const [showQuickAnswerModal, setShowQuickAnswerModal] = useState(false);
   const [importSuccessMsg, setImportSuccessMsg] = useState<string | null>(null);
 
-  const [ansP1, setAnsP1] = useState<AnswerKeyPart1>(initialData?.answers?.p1 || {});
-  const [ansP2, setAnsP2] = useState<AnswerKeyPart2>(initialData?.answers?.p2 || {});
-  const [ansP3, setAnsP3] = useState<AnswerKeyPart3>(initialData?.answers?.p3 || {});
+  const initialParsed = parseFlexibleAnswers(initialData?.answers);
+  const [ansP1, setAnsP1] = useState<AnswerKeyPart1>(initialParsed.p1);
+  const [ansP2, setAnsP2] = useState<AnswerKeyPart2>(initialParsed.p2);
+  const [ansP3, setAnsP3] = useState<AnswerKeyPart3>(initialParsed.p3);
+  const [hasExplicitlyClearedAnswers, setHasExplicitlyClearedAnswers] = useState(false);
 
   // Synchronize state when initialData changes or loads
   useEffect(() => {
     if (initialData) {
-      if (initialData.answers) {
-        setAnsP1(initialData.answers.p1 || {});
-        setAnsP2(initialData.answers.p2 || {});
-        setAnsP3(initialData.answers.p3 || {});
+      const parsed = parseFlexibleAnswers(initialData.answers);
+      const hasParsedAnswers =
+        Object.keys(parsed.p1).length > 0 ||
+        Object.keys(parsed.p2).length > 0 ||
+        Object.keys(parsed.p3).length > 0;
+
+      if (hasParsedAnswers) {
+        setAnsP1(parsed.p1);
+        setAnsP2(parsed.p2);
+        setAnsP3(parsed.p3);
+      } else if (initialData.id) {
+        // Fallback 1: Check local storage for existing complete answers for this exam
+        try {
+          const localExams = getLocalExams();
+          const match = localExams.find((e) => e.id === initialData.id);
+          if (match && match.answers) {
+            const locParsed = parseFlexibleAnswers(match.answers);
+            if (Object.keys(locParsed.p1).length > 0 || Object.keys(locParsed.p2).length > 0 || Object.keys(locParsed.p3).length > 0) {
+              setAnsP1(locParsed.p1);
+              setAnsP2(locParsed.p2);
+              setAnsP3(locParsed.p3);
+              return;
+            }
+          }
+        } catch (e) {}
+
+        // Fallback 2: Fetch authoritative exam data from backend server with teacher credentials
+        fetch(`/api/exams/${initialData.id}?role=teacher`, {
+          headers: {
+            ...getAuthHeaders(),
+            'x-user-role': 'teacher',
+          },
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (d && d.success && d.exam?.answers) {
+              const srvParsed = parseFlexibleAnswers(d.exam.answers);
+              if (Object.keys(srvParsed.p1).length > 0 || Object.keys(srvParsed.p2).length > 0 || Object.keys(srvParsed.p3).length > 0) {
+                setAnsP1(srvParsed.p1);
+                setAnsP2(srvParsed.p2);
+                setAnsP3(srvParsed.p3);
+              }
+            }
+          })
+          .catch(() => {});
       }
     }
   }, [initialData]);
@@ -98,6 +168,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
     setAnsP1(p1Updated);
     setAnsP2(p2Updated);
     setAnsP3(p3Updated);
+    setHasExplicitlyClearedAnswers(false);
 
     if (data.suggestedCounts) {
       let changed = false;
@@ -133,6 +204,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
       setAnsP1({});
       setAnsP2({});
       setAnsP3({});
+      setHasExplicitlyClearedAnswers(true);
       setImportSuccessMsg(null);
     }
   };
@@ -299,7 +371,23 @@ export const ExamForm: React.FC<ExamFormProps> = ({
 
     setIsSaving(true);
     const durationNum = Math.max(1, Number(duration) || 45);
-    const payload: ExamItem = {
+
+    let finalP1 = ansP1;
+    let finalP2 = ansP2;
+    let finalP3 = ansP3;
+
+    // Safety guard: If form has 0 answers, but initialData originally had answers and user didn't explicitly click clear:
+    const totalAnsCurrent = Object.keys(ansP1).length + Object.keys(ansP2).length + Object.keys(ansP3).length;
+    if (totalAnsCurrent === 0 && !hasExplicitlyClearedAnswers && initialData?.answers) {
+      const orig = parseFlexibleAnswers(initialData.answers);
+      if (Object.keys(orig.p1).length > 0 || Object.keys(orig.p2).length > 0 || Object.keys(orig.p3).length > 0) {
+        finalP1 = orig.p1;
+        finalP2 = orig.p2;
+        finalP3 = orig.p3;
+      }
+    }
+
+    const payload: ExamItem & { clearAnswers?: boolean } = {
       id: initialData?.id || 'ex_' + Date.now(),
       title: title.trim(),
       duration: durationNum,
@@ -314,12 +402,17 @@ export const ExamForm: React.FC<ExamFormProps> = ({
         end_time: endTime,
         file_link: finalFileLink,
         explain_link: finalExplainLink,
+        publish_score_mode: publishScoreMode,
+        score_released: publishScoreMode === 'manual' ? scoreReleased : true,
       },
+      publish_score_mode: publishScoreMode,
+      score_released: publishScoreMode === 'manual' ? scoreReleased : true,
       answers: {
-        p1: ansP1,
-        p2: ansP2,
-        p3: ansP3,
+        p1: finalP1,
+        p2: finalP2,
+        p3: finalP3,
       },
+      clearAnswers: hasExplicitlyClearedAnswers,
     };
 
     try {
@@ -466,12 +559,120 @@ export const ExamForm: React.FC<ExamFormProps> = ({
             </div>
           </div>
 
+          {/* NEW FEATURE: PUBLISH SCORE MODE (CÔNG BỐ ĐIỂM NGAY HOẶC CHỜ GV CHẤM ĐỒNG LOẠT) */}
+          <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111] space-y-4">
+            <div className="flex items-center justify-between border-b-2 border-[#111111] pb-2">
+              <h3 className="text-xs font-black text-[#111111] uppercase tracking-widest flex items-center gap-1.5">
+                <Megaphone className="w-4 h-4 text-[#4D6BFE]" />
+                2. Chế Độ Công Bố Điểm & Chấm Thi
+              </h3>
+            </div>
+
+            <p className="text-xs text-neutral-700 font-bold leading-relaxed">
+              Quyết định học sinh có được xem điểm ngay sau khi làm xong hay phải đợi giáo viên xác nhận chấm đồng loạt.
+            </p>
+
+            <div className="grid grid-cols-1 gap-3">
+              {/* Option 1: Instant */}
+              <label
+                onClick={() => setPublishScoreMode('instant')}
+                className={`p-3.5 border-2 border-[#111111] cursor-pointer transition-all flex items-start gap-3 ${
+                  publishScoreMode === 'instant'
+                    ? 'bg-white shadow-[3px_3px_0px_#111111] ring-2 ring-[#4D6BFE]'
+                    : 'bg-white/60 hover:bg-white opacity-85'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="publish_score_mode"
+                  checked={publishScoreMode === 'instant'}
+                  onChange={() => setPublishScoreMode('instant')}
+                  className="mt-0.5 accent-[#4D6BFE] w-4 h-4"
+                />
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <Zap className="w-4 h-4 text-[#0F9D58]" />
+                    <span className="text-xs font-black uppercase text-[#111111]">
+                      Công Bố Điểm Ngay Lập Tức (Tự Động)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-600 font-bold leading-relaxed">
+                    Học sinh vừa ấn Nộp bài sẽ lập tức xem được điểm số, số câu đúng/sai, xếp loại Đạt/Chưa đạt và phân tích lời giải chi tiết.
+                  </p>
+                </div>
+              </label>
+
+              {/* Option 2: Manual / Batch Release */}
+              <label
+                onClick={() => setPublishScoreMode('manual')}
+                className={`p-3.5 border-2 border-[#111111] cursor-pointer transition-all flex items-start gap-3 ${
+                  publishScoreMode === 'manual'
+                    ? 'bg-white shadow-[3px_3px_0px_#111111] ring-2 ring-[#E63946]'
+                    : 'bg-white/60 hover:bg-white opacity-85'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="publish_score_mode"
+                  checked={publishScoreMode === 'manual'}
+                  onChange={() => setPublishScoreMode('manual')}
+                  className="mt-0.5 accent-[#E63946] w-4 h-4"
+                />
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="w-4 h-4 text-[#E63946]" />
+                    <span className="text-xs font-black uppercase text-[#111111]">
+                      Chờ Giáo Viên Xác Nhận Chấm Đồng Loạt Mới Công Bố
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-600 font-bold leading-relaxed">
+                    Học sinh nộp bài chỉ nhận thông báo đã ghi nhận bài thi thành công. Toàn bộ điểm và đáp án được niêm phong cho đến khi Giáo viên bấm nút <strong>"Công Bố Điểm Đồng Loạt"</strong>.
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* If Manual is chosen, allow teacher to toggle scoreReleased directly here too */}
+            {publishScoreMode === 'manual' && (
+              <div className="p-3 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black uppercase text-neutral-800">
+                    Trạng Thái Công Bố Hiện Tại:
+                  </span>
+                  <span className={`text-[10px] font-black px-2 py-0.5 border border-[#111111] ${
+                    scoreReleased ? 'bg-[#0F9D58] text-white' : 'bg-[#FFC93C] text-[#111111]'
+                  }`}>
+                    {scoreReleased ? '📢 ĐÃ CÔNG BỐ ĐIỂM' : '🔒 ĐANG NIÊM PHONG (CHỜ GV BẤM)'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#111111]">
+                  <p className="text-[10px] text-neutral-600 font-bold">
+                    {scoreReleased
+                      ? 'Học sinh hiện tại đã có thể xem được điểm của đề này.'
+                      : 'Học sinh chưa thấy điểm cho đến khi bạn bấm xác nhận công bố.'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setScoreReleased(!scoreReleased)}
+                    className={`px-2.5 py-1 text-[11px] font-black uppercase border-2 border-[#111111] transition-all shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] ${
+                      scoreReleased
+                        ? 'bg-neutral-100 hover:bg-[#E63946] hover:text-white text-neutral-800'
+                        : 'bg-[#0F9D58] text-white hover:bg-[#0d854a]'
+                    }`}
+                  >
+                    {scoreReleased ? 'Khóa Lại Điểm' : 'Mở Công Bố Điểm Ngay'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* CRITICAL FEATURE: TARGET CLASS SELECTION */}
           <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111] space-y-4">
             <div className="flex items-center justify-between border-b-2 border-[#111111] pb-2">
               <h3 className="text-xs font-black text-[#111111] uppercase tracking-widest flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-[#4D6BFE]" />
-                2. Chọn Lớp / Nhóm Học Sinh Được Làm Bài
+                3. Chọn Lớp / Nhóm Học Sinh Được Làm Bài
               </h3>
             </div>
 
@@ -540,7 +741,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
           {/* Exam Structure */}
           <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111] space-y-4">
             <h3 className="text-xs font-black text-[#111111] uppercase tracking-widest border-b-2 border-[#111111] pb-2">
-              3. Cấu Trúc Ma Trận Câu Hỏi
+              4. Cấu Trúc Ma Trận Câu Hỏi
             </h3>
             <div>
               <label className="block text-[#111111] text-xs font-black mb-1.5 uppercase">
@@ -595,7 +796,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
           {/* Timing & File upload */}
           <div className="bg-[#FDF6E9] p-5 border-2 border-[#111111] shadow-[4px_4px_0px_#111111] space-y-4">
             <h3 className="text-xs font-black text-[#111111] uppercase tracking-widest border-b-2 border-[#111111] pb-2">
-              4. Giờ Mở Đề & Tải File Đề Thi PDF
+              5. Giờ Mở Đề & Tải File Đề Thi PDF
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <div>

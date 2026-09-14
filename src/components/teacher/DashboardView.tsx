@@ -2,15 +2,17 @@ import React, { useState } from 'react';
 import { ExamItem, StudentAccount, ExamSubmission } from '../../types';
 import { 
   FileText, Users, Award, Layers, TrendingUp, ShieldCheck, CheckCircle, 
-  Settings, Code, Copy, Check, ExternalLink, RefreshCw 
+  Settings, Code, Copy, Check, ExternalLink, RefreshCw, BarChart2, AlertTriangle, ArrowRight 
 } from 'lucide-react';
 import { getApiUrl, setApiUrl, resetApiUrl, GOOGLE_APPS_SCRIPT_CODE } from '../../services/storageService';
+import { QuestionAnalyticsModal } from './QuestionAnalyticsModal';
 
 interface DashboardViewProps {
   exams: ExamItem[];
   students: { [username: string]: StudentAccount };
   history: ExamSubmission[];
   classes: string[];
+  onNavigateToAnalytics?: () => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -18,10 +20,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   students,
   history,
   classes,
+  onNavigateToAnalytics,
 }) => {
   const studentCount = Object.keys(students).length;
   const examCount = exams.length;
   const historyCount = history.length;
+
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
 
   // Teacher Google Apps Script API configuration state
   const [showConfig, setShowConfig] = useState(false);
@@ -228,6 +233,39 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* Question Analytics Quick Action Banner */}
+      <div className="bg-[#111111] text-white p-6 border-3 border-[#111111] shadow-[6px_6px_0px_#4D6BFE] flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#00E599] text-[#111111] font-black text-xs uppercase border-2 border-white shadow-[2px_2px_0px_#ffffff]">
+            <BarChart2 className="w-4 h-4" /> Tính năng mới cho Giáo Viên
+          </div>
+          <h2 className="text-xl md:text-2xl font-black text-white uppercase tracking-tight">
+            Phân Tích Câu Đúng Nhiều & Câu Sai Nhiều
+          </h2>
+          <p className="text-xs md:text-sm text-neutral-300 font-medium max-w-2xl">
+            Tự động tổng hợp dữ liệu từ các bài thi đã nộp: phát hiện ngay các câu hỏi có tỉ lệ sai cao (câu bẫy, lỗ hổng kiến thức), thống kê tỉ lệ chọn từng phương án A/B/C/D và xuất báo cáo chi tiết gửi cho tổ chuyên môn.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              if (onNavigateToAnalytics) {
+                onNavigateToAnalytics();
+              } else {
+                setShowAnalyticsModal(true);
+              }
+            }}
+            className="px-5 py-3 bg-[#00E599] hover:bg-[#00c784] text-[#111111] border-2 border-white text-xs md:text-sm font-black uppercase shadow-[4px_4px_0px_#ffffff] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-2 transition-all cursor-pointer"
+          >
+            <BarChart2 className="w-4 h-4" />
+            <span>Mở Bảng Phân Tích Câu Hỏi</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
       {/* Class breakdown overview */}
       <div className="bg-white p-6 border-3 border-[#111111] shadow-[6px_6px_0px_#111111]">
         <h3 className="text-base font-black text-[#111111] mb-4 uppercase tracking-wider flex items-center gap-2">
@@ -248,6 +286,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Analytics Modal */}
+      {showAnalyticsModal && (
+        <QuestionAnalyticsModal
+          isOpen={showAnalyticsModal}
+          onClose={() => setShowAnalyticsModal(false)}
+          exams={exams}
+          history={history}
+          availableClasses={classes}
+        />
+      )}
     </div>
   );
 };

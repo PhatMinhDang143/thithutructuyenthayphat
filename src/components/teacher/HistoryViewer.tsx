@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { ExamSubmission, QuestionTimingRecord } from '../../types';
+import { ExamSubmission, QuestionTimingRecord, ExamItem } from '../../types';
 import { 
   Trash2, ShieldCheck, AlertTriangle, Filter, Search, Award, CheckSquare, Square, 
   RefreshCw, UserCheck, HelpCircle, CheckCircle2, Calculator, Upload, ClipboardPaste, 
-  X, Clock, Zap, BarChart2
+  X, Clock, Zap, BarChart2, FileSpreadsheet, Check
 } from 'lucide-react';
-import { clearExamHistory, deleteHistoryEntries, getAuthToken, safeFetchJson, regradeAllSubmissionsLocally, getLocalExams, calculateScoreLocally, getApiUrl, safeSetItem, STORAGE_KEYS } from '../../services/storageService';
+import * as XLSX from 'xlsx';
+import { clearExamHistory, deleteHistoryEntries, getAuthToken, safeFetchJson, regradeAllSubmissionsLocally, getLocalExams, calculateScoreLocally, normalizeExamTitle, getApiUrl, safeSetItem, STORAGE_KEYS } from '../../services/storageService';
+import { QuestionAnalyticsModal } from './QuestionAnalyticsModal';
 
 const formatQuestionName = (key: string): string => {
   if (key.startsWith('p1_')) {
@@ -25,17 +27,20 @@ interface HistoryViewerProps {
   history: ExamSubmission[];
   classes: string[];
   onRefresh: () => void;
+  exams?: ExamItem[];
 }
 
-export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, onRefresh }) => {
+export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, onRefresh, exams }) => {
   const [selectedClass, setSelectedClass] = useState('Tất cả');
   const [selectedExamTitle, setSelectedExamTitle] = useState('Tất cả');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRegrading, setIsRegrading] = useState(false);
+  const [exportedExcel, setExportedExcel] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [pasteData, setPasteData] = useState('');
   const [selectedTimingSubmission, setSelectedTimingSubmission] = useState<ExamSubmission | null>(null);
 
@@ -268,14 +273,210 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
     );
   };
 
+  const getSubmissionStats = (h: ExamSubmission) => {
+    const sc = Number(h.score) || 0;
+    const result = sc >= 5.0 ? 'Đạt' : 'Chưa đạt';
+    let rank = 'Đạt';
+    if (sc >= 9.0) rank = 'Xuất sắc';
+    else if (sc >= 8.0) rank = 'Giỏi';
+    else if (sc >= 6.5) rank = 'Khá';
+    else if (sc < 5.0) rank = 'Chưa đạt';
+
+    const matchedExam = (exams || getLocalExams()).find(
+      (e) => normalizeExamTitle(e.title) === normalizeExamTitle(h.examTitle)
+    );
+
+    let totalQ = 0;
+    if (matchedExam) {
+      const cfg = matchedExam.questions || {};
+      const numP1 = Number(cfg.num_p1) || Object.keys(matchedExam.answers?.p1 || {}).length || 0;
+      const numP2 = Number(cfg.num_p2) || Object.keys(matchedExam.answers?.p2 || {}).length || 0;
+      const numP3 = Number(cfg.num_p3) || Object.keys(matchedExam.answers?.p3 || {}).length || 0;
+      totalQ = numP1 + numP2 + numP3;
+    } else if ((h as any).totalQuestions) {
+      totalQ = Number((h as any).totalQuestions) || 0;
+    } else if (h.details) {
+      totalQ =
+        Object.keys(h.details.p1 || {}).length +
+        Object.keys(h.details.p2 || {}).length +
+        Object.keys(h.details.p3 || {}).length;
+    }
+
+    let correct: number | undefined = undefined;
+    if (typeof h.correct === 'number') {
+      correct = h.correct;
+    } else if (typeof (h as any).correctCount === 'number') {
+      correct = (h as any).correctCount;
+    } else if (matchedExam && h.details) {
+      const calc = calculateScoreLocally(matchedExam, h.details);
+      correct = calc.correct;
+    }
+
+    const finalCorrect = correct !== undefined ? correct : (totalQ > 0 && sc > 0 ? Math.round((sc / 10) * totalQ) : 0);
+    const finalTotal = totalQ || finalCorrect;
+    const finalWrong = finalTotal >= finalCorrect ? finalTotal - finalCorrect : 0;
+
+    let duration = 'Chưa ghi nhận';
+    if (h.timing?.formattedDuration) {
+      duration = h.timing.formattedDuration;
+    } else if (h.timing?.totalSeconds) {
+      const m = Math.floor(h.timing.totalSeconds / 60);
+      const s = h.timing.totalSeconds % 60;
+      duration = m > 0 ? `${m} phút ${s} giây` : `${s} giây`;
+    } else if ((h as any).durationMinutes) {
+      duration = `${(h as any).durationMinutes} phút`;
+    }
+
+    const rawSubAt = h.submitted_at || (h as any).submittedAt || '';
+    let submittedAt = rawSubAt;
+    if (rawSubAt && !/^\d{1,2}\/\d{1,2}\/\d{4}/.test(rawSubAt)) {
+      const d = new Date(rawSubAt);
+      if (!isNaN(d.getTime())) {
+        submittedAt = d.toLocaleString('vi-VN');
+      }
+    }
+
+    return {
+      score: sc,
+      result,
+      rank,
+      correct: finalCorrect,
+      wrong: finalWrong,
+      total: finalTotal,
+      duration,
+      submittedAt,
+    };
+  };
+
+  const handleExportExcel = () => {
+    if (filteredHistory.length === 0) {
+      alert('Không có bài nộp nào để xuất file Excel!');
+      return;
+    }
+
+    try {
+      const wb = XLSX.utils.book_new();
+
+      // SHEET 1: Danh sách bài thi & Điểm chi tiết
+      const sheet1Data = filteredHistory.map((h, idx) => {
+        const stats = getSubmissionStats(h);
+
+        return {
+          'STT': idx + 1,
+          'Họ Và Tên': h.name || h.username,
+          'Tài Khoản (SBD)': h.username || '',
+          'Lớp': h.group || 'Chưa rõ',
+          'Tên Đề Thi': h.examTitle || '',
+          'Điểm Số': stats.score,
+          'Đánh Giá': stats.result,
+          'Xếp Loại': stats.rank,
+          'Số Câu Đúng': stats.correct,
+          'Số Câu Sai': stats.wrong,
+          'Tổng Số Câu': stats.total,
+          'Tỉ Lệ Đúng (%)': `${stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0}%`,
+          'Thời Gian Làm Bài': stats.duration,
+          'Thời Gian Nộp': stats.submittedAt,
+          'Thiết Bị': h.deviceInfo || '',
+          'Địa Chỉ IP': h.ipAddress || '',
+          'Số Lần Vi Phạm': h.cheat || '0 lần',
+        };
+      });
+
+      const ws1 = XLSX.utils.json_to_sheet(sheet1Data);
+      ws1['!cols'] = [
+        { wch: 6 },   // STT
+        { wch: 25 },  // Họ Và Tên
+        { wch: 16 },  // Tài Khoản (SBD)
+        { wch: 12 },  // Lớp
+        { wch: 30 },  // Tên Đề Thi
+        { wch: 10 },  // Điểm Số
+        { wch: 14 },  // Đánh Giá (Đạt / Chưa đạt)
+        { wch: 14 },  // Xếp Loại (Xuất sắc / Giỏi / Khá / Đạt / Chưa đạt)
+        { wch: 14 },  // Số Câu Đúng
+        { wch: 14 },  // Số Câu Sai
+        { wch: 14 },  // Tổng Số Câu
+        { wch: 16 },  // Tỉ Lệ Đúng (%)
+        { wch: 20 },  // Thời Gian Làm Bài
+        { wch: 22 },  // Thời Gian Nộp
+        { wch: 20 },  // Thiết Bị
+        { wch: 16 },  // Địa Chỉ IP
+        { wch: 16 },  // Số Lần Vi Phạm
+      ];
+      XLSX.utils.book_append_sheet(wb, ws1, 'Bang_Diem_Chi_Tiet');
+
+      // SHEET 2: Thống Kê Điểm Theo Từng Lớp
+      const groupMap: Record<string, number[]> = {};
+      filteredHistory.forEach((h) => {
+        const grp = h.group || 'Chưa phân lớp';
+        if (!groupMap[grp]) groupMap[grp] = [];
+        groupMap[grp].push(Number(h.score) || 0);
+      });
+
+      const sheet2Data = Object.entries(groupMap).map(([grp, scores]) => {
+        const total = scores.length;
+        const sum = scores.reduce((a, b) => a + b, 0);
+        const avg = Math.round((sum / total) * 100) / 100;
+        const max = Math.max(...scores);
+        const min = Math.min(...scores);
+        const passed = scores.filter((s) => s >= 5.0).length;
+        const failed = total - passed;
+        const excellent = scores.filter((s) => s >= 8.0).length;
+
+        return {
+          'Lớp': grp,
+          'Số Bài Nộp': total,
+          'Điểm Trung Bình': avg,
+          'Điểm Cao Nhất': max,
+          'Điểm Thấp Nhất': min,
+          'Số HS Đạt (>=5.0)': passed,
+          'Tỉ Lệ Đạt (%)': `${Math.round((passed / total) * 100)}%`,
+          'Số HS Chưa Đạt (<5.0)': failed,
+          'Tỉ Lệ Chưa Đạt (%)': `${Math.round((failed / total) * 100)}%`,
+          'Số HS Giỏi & XS (>=8.0)': excellent,
+          'Tỉ Lệ Giỏi (%)': `${Math.round((excellent / total) * 100)}%`,
+        };
+      });
+
+      const ws2 = XLSX.utils.json_to_sheet(sheet2Data);
+      ws2['!cols'] = [
+        { wch: 15 },
+        { wch: 14 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 18 },
+        { wch: 16 },
+        { wch: 22 },
+        { wch: 18 },
+        { wch: 22 },
+        { wch: 16 },
+      ];
+      XLSX.utils.book_append_sheet(wb, ws2, 'Thong_Ke_Theo_Lop');
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const safeExam = (selectedExamTitle !== 'Tất cả' ? selectedExamTitle : 'TatCaDe')
+        .replace(/[^a-zA-Z0-9\u00C0-\u024F\u1EA0-\u1EF9]/g, '_')
+        .substring(0, 25);
+      const safeClass = (selectedClass !== 'Tất cả' ? selectedClass : 'TatCaLop')
+        .replace(/[^a-zA-Z0-9]/g, '_');
+
+      XLSX.writeFile(wb, `Bang_Diem_Thi_${safeExam}_${safeClass}_${dateStr}.xlsx`);
+      setExportedExcel(true);
+      setTimeout(() => setExportedExcel(false), 3000);
+    } catch (err) {
+      console.error('Lỗi xuất Excel:', err);
+      alert('Không thể xuất file Excel: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   return (
-    <div className="bg-white border-3 border-[#111111] shadow-[6px_6px_0px_#111111] overflow-hidden flex flex-col h-full space-y-5 text-[#111111]">
+    <div className="bg-white border-2 sm:border-3 border-[#111111] shadow-[4px_4px_0px_#111111] sm:shadow-[6px_6px_0px_#111111] overflow-hidden flex flex-col h-full space-y-4 sm:space-y-5 text-[#111111]">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-6 border-b-2 border-[#111111] gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3.5 sm:p-6 border-b-2 border-[#111111] gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-xl md:text-2xl font-black uppercase text-[#111111]">Nhật Ký & Bảng Điểm Thi Theo Lớp</h2>
-            <span className="bg-[#4D6BFE] text-white text-xs font-black px-2.5 py-0.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            <h2 className="text-lg sm:text-xl md:text-2xl font-black uppercase text-[#111111]">Nhật Ký & Bảng Điểm Thi Theo Lớp</h2>
+            <span className="bg-[#4D6BFE] text-white text-[11px] sm:text-xs font-black px-2 sm:px-2.5 py-0.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
               {history.length} Bài Nộp
             </span>
           </div>
@@ -284,10 +485,27 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 w-full sm:w-auto">
+          <button
+            onClick={() => setShowAnalyticsModal(true)}
+            className="px-3.5 py-2.5 bg-[#00E599] hover:bg-[#00c784] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black uppercase text-xs tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            title="Thống kê câu nào đúng nhiều và câu nào sai nhiều"
+          >
+            <BarChart2 className="w-4 h-4" /> Phân Tích Câu Đúng / Sai
+          </button>
+
+          <button
+            onClick={handleExportExcel}
+            className="px-3.5 py-2.5 bg-[#4D6BFE] hover:bg-[#3b5bdb] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black uppercase text-xs tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            title="Xuất danh sách điểm số và bảng thống kê các lớp ra file Excel (.xlsx)"
+          >
+            {exportedExcel ? <Check className="w-4 h-4 text-emerald-300" /> : <FileSpreadsheet className="w-4 h-4" />}
+            {exportedExcel ? 'Đã Xuất Excel!' : 'Xuất File Excel (.xlsx)'}
+          </button>
+
           <button
             onClick={() => setShowImportModal(true)}
-            className="px-3.5 py-2.5 bg-[#4D6BFE] hover:bg-[#3b5bdb] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black uppercase text-xs tracking-wider flex items-center justify-center gap-1.5 transition-all"
+            className="px-3.5 py-2.5 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black uppercase text-xs tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
             title="Dán dòng dữ liệu từ Google Sheet để hệ thống tự động nhận diện câu trả lời và chấm điểm thật ngay lập tức"
           >
             <ClipboardPaste className="w-4 h-4" /> Dán Dữ Liệu Sheet
@@ -381,7 +599,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
       )}
 
       {/* Guide Note */}
-      <div className="mx-6 p-3 bg-[#FDF6E9] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] flex items-center justify-between text-xs text-neutral-800 font-bold gap-3">
+      <div className="mx-3 sm:mx-6 p-3 bg-[#FDF6E9] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] flex items-center justify-between text-xs text-neutral-800 font-bold gap-3">
         <div className="flex items-center gap-2">
           <HelpCircle className="w-4 h-4 text-[#4D6BFE] shrink-0" />
           <span>
@@ -391,9 +609,9 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="px-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+      <div className="px-3 sm:px-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
         {/* Class Filter */}
-        <div className="flex items-center gap-2 bg-[#FDF6E9] p-2.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+        <div className="flex items-center gap-2 bg-[#FDF6E9] p-2 sm:p-2.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
           <Filter className="w-4 h-4 text-[#4D6BFE] shrink-0" />
           <span className="text-[11px] font-black text-[#111111] uppercase shrink-0">Lớp:</span>
           <select
@@ -410,7 +628,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
         </div>
 
         {/* Exam Title Filter */}
-        <div className="flex items-center gap-2 bg-[#FDF6E9] p-2.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+        <div className="flex items-center gap-2 bg-[#FDF6E9] p-2 sm:p-2.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
           <span className="text-[11px] font-black text-[#111111] uppercase shrink-0">Đề thi:</span>
           <select
             value={selectedExamTitle}
@@ -440,8 +658,8 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto custom-scroll flex-1 px-6 pb-6">
-        <table className="w-full text-left border-collapse border-2 border-[#111111]">
+      <div className="overflow-x-auto custom-scroll flex-1 px-3 sm:px-6 pb-4 sm:pb-6">
+        <table className="w-full min-w-[760px] text-left border-collapse border-2 border-[#111111]">
           <thead>
             <tr className="text-xs uppercase tracking-wider font-black text-[#111111] bg-[#FDF6E9] border-b-2 border-[#111111]">
               <th className="p-3 w-10 text-center border-r-2 border-[#111111]">
@@ -458,7 +676,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
               <th className="p-3.5 border-r-2 border-[#111111]">Thí Sinh (SBD)</th>
               <th className="p-3.5 border-r-2 border-[#111111]">Lớp Học</th>
               <th className="p-3.5 border-r-2 border-[#111111]">Đề Khảo Sát</th>
-              <th className="p-3.5 border-r-2 border-[#111111] text-[#0F9D58]">Điểm Số</th>
+              <th className="p-3.5 border-r-2 border-[#111111] text-[#0F9D58]">Điểm & Đánh Giá</th>
               <th className="p-3.5 border-r-2 border-[#111111] text-center">Thời Gian & Tốc Độ</th>
               <th className="p-3.5 border-r-2 border-[#111111] text-center">Giám Sát Vi Phạm</th>
               <th className="p-3.5 text-center w-24">Thao Tác</th>
@@ -468,6 +686,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
             {filteredHistory.slice().reverse().map((h, i) => {
               const rowId = h.id || `sub_${i}`;
               const isSelected = selectedIds.includes(rowId);
+              const stats = getSubmissionStats(h);
 
               return (
                 <tr
@@ -501,8 +720,23 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
                   <td className="p-3.5 text-xs text-neutral-800 font-bold max-w-xs truncate border-r-2 border-neutral-200" title={h.examTitle}>
                     {h.examTitle}
                   </td>
-                  <td className="p-3.5 text-xl text-[#0F9D58] font-black border-r-2 border-neutral-200">
-                    {h.score}
+                  <td className="p-3.5 border-r-2 border-neutral-200">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xl text-[#0F9D58] font-black">{h.score}</span>
+                      <span
+                        className={`px-1.5 py-0.5 text-[10px] font-black uppercase border rounded ${
+                          stats.result === 'Đạt'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-400'
+                            : 'bg-rose-100 text-rose-800 border-rose-400'
+                        }`}
+                      >
+                        {stats.result}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-neutral-600 font-bold mt-0.5">
+                      Đúng: <span className="text-emerald-700 font-black">{stats.correct}</span> | Sai: <span className="text-rose-600 font-black">{stats.wrong}</span>
+                      {stats.total > 0 ? <span className="text-neutral-500 font-normal"> ({stats.total} câu)</span> : null}
+                    </div>
                   </td>
                   {/* Thời Gian & Tốc Độ (Secret Teacher Telemetry) */}
                   <td className="p-3 text-xs border-r-2 border-neutral-200" onClick={(e) => e.stopPropagation()}>
@@ -726,6 +960,18 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Question Analytics Modal */}
+      {showAnalyticsModal && (
+        <QuestionAnalyticsModal
+          isOpen={showAnalyticsModal}
+          onClose={() => setShowAnalyticsModal(false)}
+          exams={exams || getLocalExams()}
+          history={history}
+          availableClasses={classes}
+          initialClass={selectedClass}
+        />
       )}
     </div>
   );
