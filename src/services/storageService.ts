@@ -668,11 +668,14 @@ export const fetchAllData = async (
       p = temp;
     }
 
+    const av = String(raw.avatar || raw.Avatar || raw.anh || raw.Anh || '').trim();
+
     return {
       username: u,
       name: n,
       password: p,
       group: g,
+      avatar: av || undefined,
     };
   };
 
@@ -1191,6 +1194,7 @@ export const submitExamAnswersToServer = async (payload: {
   examTitle: string;
   username: string;
   name: string;
+  avatar?: string;
   group: string;
   studentAnswers: any;
   cheatCount: number;
@@ -1251,10 +1255,11 @@ export const submitExamAnswersToServer = async (payload: {
     examTitle: payload.examTitle,
     username: payload.username,
     name: payload.name,
+    avatar: payload.avatar,
     group: payload.group,
     score: graded.score,
     correct: graded.correct,
-    cheat: `${payload.cheatCount || 0} lần`,
+    cheat: Number(payload.cheatCount) >= 4 ? `${payload.cheatCount} lần (Bị dừng bài)` : `${payload.cheatCount || 0} lần`,
     submitted_at: new Date().toLocaleString('vi-VN'),
     details: payload.studentAnswers,
     correctAnswers: matchedExam?.answers,
@@ -1330,6 +1335,86 @@ export const submitExamResult = async (payload: ExamSubmission): Promise<{ succe
   } catch (e) {}
 
   return { success: true, submission: payload };
+};
+
+// ================= UPDATE STUDENT AVATAR =================
+export const updateStudentAvatar = async (
+  username: string,
+  avatar: string,
+  currentUser?: any
+): Promise<{ success: boolean; avatar: string }> => {
+  // 1. Update current user in localStorage
+  if (currentUser) {
+    const updatedUser = { ...currentUser, avatar };
+    safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(updatedUser));
+  } else {
+    try {
+      const stored = getStoredCurrentUser();
+      if (stored) {
+        stored.avatar = avatar;
+        safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(stored));
+      }
+    } catch (e) {}
+  }
+
+  // 2. Update students map in localStorage
+  try {
+    const rawStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+    if (rawStudents) {
+      const students = JSON.parse(rawStudents);
+      const cleanUser = username.trim();
+      const lower = cleanUser.toLowerCase();
+      if (students[cleanUser]) {
+        students[cleanUser].avatar = avatar;
+      } else if (students[lower]) {
+        students[lower].avatar = avatar;
+      }
+      safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
+    }
+  } catch (e) {}
+
+  // 3. Retroactively update past submissions in localStorage
+  try {
+    const rawHistory = localStorage.getItem(STORAGE_KEYS.HISTORY);
+    if (rawHistory) {
+      const history: ExamSubmission[] = JSON.parse(rawHistory);
+      const lower = username.trim().toLowerCase();
+      history.forEach((h) => {
+        if (h && String(h.username || '').toLowerCase() === lower) {
+          h.avatar = avatar;
+        }
+      });
+      safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(history));
+    }
+  } catch (e) {}
+
+  // 4. Send to server (if running with server)
+  try {
+    await fetch('/api/student/avatar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, avatar }),
+    });
+  } catch (e) {}
+
+  // 4b. Forward to Google Apps Script (cho trường hợp chạy thuần Google Sheet không máy chủ)
+  const apiUrl = getApiUrl();
+  if (apiUrl) {
+    try {
+      fetch(`${apiUrl}?action=save_avatar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ username, avatar }),
+      }).catch((gasErr) => console.warn('GAS save_avatar warning:', gasErr));
+    } catch (e) {}
+  }
+
+  // 5. Trigger cross-component sync event
+  try {
+    window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'avatar', username, avatar } }));
+  } catch (e) {}
+
+  return { success: true, avatar };
 };
 
 // ================= CLEAR HISTORY =================
@@ -1487,6 +1572,12 @@ function doPost(e) {
     if (action === 'clear_history') {
       clearHistorySheet(ss);
       return createJsonResponse({ success: true, message: 'Đã xóa nhật ký thi' });
+    }
+    
+    // 7. CẬP NHẬT AVATAR HỌC SINH
+    if (action === 'save_avatar' || action === 'update_avatar') {
+      updateStudentAvatarInSheet(ss, postData.username, postData.avatar);
+      return createJsonResponse({ success: true, message: 'Đã cập nhật avatar vào Google Sheet' });
     }
     
     return createJsonResponse({ success: false, error: 'Hành động POST không hợp lệ: ' + action });
@@ -1715,7 +1806,7 @@ function getStudentsData(ss) {
   
   // Dynamically detect column headers
   var headerRow = rows[0] || [];
-  var colUser = -1, colName = -1, colPass = -1, colGroup = -1;
+  var colUser = -1, colName = -1, colPass = -1, colGroup = -1, colAvatar = -1;
 
   for (var c = 0; c < headerRow.length; c++) {
     var h = String(headerRow[c] || '').toLowerCase().trim();
@@ -1727,6 +1818,8 @@ function getStudentsData(ss) {
       colName = c;
     } else if (colGroup === -1 && (h.indexOf('lớp') > -1 || h.indexOf('lop') > -1 || h.indexOf('group') > -1 || h.indexOf('class') > -1 || h.indexOf('nhóm') > -1 || h.indexOf('nhom') > -1)) {
       colGroup = c;
+    } else if (colAvatar === -1 && (h.indexOf('avatar') > -1 || h.indexOf('ảnh') > -1 || h.indexOf('anh') > -1 || h.indexOf('hình') > -1)) {
+      colAvatar = c;
     }
   }
 
@@ -1748,6 +1841,7 @@ function getStudentsData(ss) {
       var n = String(rows[i][colName] || u).trim();
       var p = String(rows[i][colPass] !== undefined ? rows[i][colPass] : '123').trim();
       var g = String(rows[i][colGroup] || 'Chưa phân lớp').trim();
+      var av = colAvatar > -1 ? String(rows[i][colAvatar] || '').trim() : '';
 
       // Auto-detect if name and password got inverted in sheet data
       var pHasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\\s]/i.test(p) || p.indexOf(' ') > -1;
@@ -1762,7 +1856,8 @@ function getStudentsData(ss) {
         username: u,
         name: n,
         password: p,
-        group: g
+        group: g,
+        avatar: av || undefined
       };
     }
   }
@@ -1772,17 +1867,54 @@ function getStudentsData(ss) {
 function saveStudentsToSheet(ss, studentsObj) {
   var sheet = getStudentSheet(ss);
   sheet.clearContents();
-  sheet.appendRow(['Username', 'Name', 'Password', 'Group', 'Updated_At']);
+  sheet.appendRow(['Username', 'Name', 'Password', 'Group', 'Avatar', 'Updated_At']);
   
   var rows = [];
   var nowStr = new Date().toLocaleString('vi-VN');
   Object.keys(studentsObj).forEach(function(k) {
     var s = studentsObj[k];
-    rows.push([s.username, s.name, s.password || '123', s.group || 'Chưa phân lớp', nowStr]);
+    rows.push([s.username, s.name, s.password || '123', s.group || 'Chưa phân lớp', s.avatar || '', nowStr]);
   });
   
   if (rows.length > 0) {
-    sheet.getRange(2, 1, rows.length, 5).setValues(rows);
+    sheet.getRange(2, 1, rows.length, 6).setValues(rows);
+  }
+}
+
+function updateStudentAvatarInSheet(ss, username, avatar) {
+  if (!username) return;
+  var sheet = getStudentSheet(ss);
+  var rows = sheet.getDataRange().getValues();
+  if (rows.length === 0) return;
+
+  var headerRow = rows[0] || [];
+  var colUser = -1;
+  var colAvatar = -1;
+
+  for (var c = 0; c < headerRow.length; c++) {
+    var h = String(headerRow[c] || '').toLowerCase().trim();
+    if (colUser === -1 && (h.indexOf('sbd') > -1 || h.indexOf('user') > -1 || h.indexOf('tài khoản') > -1 || h.indexOf('tai khoan') > -1 || h.indexOf('mã') > -1 || h === 'id')) {
+      colUser = c;
+    } else if (colAvatar === -1 && (h.indexOf('avatar') > -1 || h.indexOf('ảnh') > -1 || h.indexOf('anh') > -1 || h.indexOf('hình') > -1)) {
+      colAvatar = c;
+    }
+  }
+
+  if (colUser === -1) colUser = 0;
+
+  // Nếu sheet chưa có cột Avatar, tự động bổ sung tiêu đề ở cột kế tiếp
+  if (colAvatar === -1) {
+    colAvatar = headerRow.length;
+    sheet.getRange(1, colAvatar + 1).setValue('Avatar');
+  }
+
+  var targetUser = String(username).toLowerCase().trim();
+  for (var i = 1; i < rows.length; i++) {
+    var u = String(rows[i][colUser] || '').toLowerCase().trim();
+    if (u === targetUser) {
+      sheet.getRange(i + 1, colAvatar + 1).setValue(avatar || '');
+      break;
+    }
   }
 }
 

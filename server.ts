@@ -411,7 +411,7 @@ export function gradeSubmissionAuthoritatively(
   exam: any,
   studentAnswers: any = {},
   cheatCount: number = 0,
-  studentInfo: { username?: string; name?: string; group?: string } = {},
+  studentInfo: { username?: string; name?: string; group?: string; avatar?: string } = {},
   timing?: any
 ) {
   const cfg = exam.questions || {};
@@ -555,12 +555,13 @@ export function gradeSubmissionAuthoritatively(
     submitted_at: new Date().toLocaleString('vi-VN'),
     username: String(studentInfo.username || 'guest').trim(),
     name: String(studentInfo.name || 'Học sinh').trim(),
+    avatar: studentInfo.avatar || undefined,
     group: String(studentInfo.group || 'Chưa phân lớp').trim(),
     examTitle: exam.title,
     examId: exam.id,
     score: finalScore,
     correct: correctCount,
-    cheat: `${Number(cheatCount) || 0} lần`,
+    cheat: Number(cheatCount) >= 4 ? `${Number(cheatCount)} lần (Bị dừng bài)` : `${Number(cheatCount) || 0} lần`,
     details: sAns,
     correctAnswers: key,
     timing: timing || undefined,
@@ -695,6 +696,7 @@ app.post('/api/auth/login', async (req, res) => {
         username: foundStudent.username || cleanUser,
         name: foundStudent.name || cleanUser,
         group: foundStudent.group || foundStudent.className || 'Chưa phân lớp',
+        avatar: foundStudent.avatar || undefined,
         role: 'student' as const,
       };
 
@@ -804,12 +806,18 @@ app.get('/api/all', (req, res) => {
         submitted_at: h.submitted_at,
         username: h.username,
         name: h.name,
+        avatar: h.avatar || undefined,
         group: h.group,
         examTitle: h.examTitle,
         examId: h.examId || (matchedExam ? matchedExam.id : undefined),
         score: h.score,
         correct: h.correct,
-        cheat: isOwner ? h.cheat : '0 lần',
+        timing: h.timing ? {
+          totalSeconds: h.timing.totalSeconds,
+          formattedDuration: h.timing.formattedDuration,
+          submittedAt: h.timing.submittedAt,
+        } : undefined,
+        cheat: h.cheat || '0 lần',
         details: isOwner ? h.details : undefined,
         correctAnswers: isOwner ? resolvedAnswers : undefined,
       };
@@ -1039,7 +1047,7 @@ app.post('/api/sync/refresh', async (req, res) => {
 // 9. AUTHORITATIVE SERVER-SIDE EXAM SUBMISSION & GRADING (High-Concurrency Safe with WAL)
 app.post('/api/exams/submit', async (req, res) => {
   try {
-    const { examId, examTitle, username, name, group, studentAnswers, cheatCount, timing } = req.body;
+    const { examId, examTitle, username, name, avatar, group, studentAnswers, cheatCount, timing } = req.body;
 
     if (!examId && !examTitle) {
       return res.status(400).json({ success: false, error: 'Thiếu thông tin nhận diện đề thi (examId)' });
@@ -1088,7 +1096,7 @@ app.post('/api/exams/submit', async (req, res) => {
       targetExam,
       studentAnswers,
       Number(cheatCount) || 0,
-      { username, name, group },
+      { username, name, group, avatar },
       timing
     );
 
@@ -1115,6 +1123,50 @@ app.post('/api/exams/submit', async (req, res) => {
   } catch (err: any) {
     console.error('Server grading error:', err);
     res.status(500).json({ success: false, error: err?.message || 'Lỗi chấm điểm bài thi trên máy chủ' });
+  }
+});
+
+// 9b. Update Student Avatar Endpoint
+app.post('/api/student/avatar', async (req, res) => {
+  try {
+    const { username, avatar } = req.body;
+    if (!username || !avatar) {
+      return res.status(400).json({ success: false, error: 'Thiếu thông tin tài khoản hoặc ảnh đại diện' });
+    }
+
+    const cleanUser = String(username).trim();
+    const lowerUser = cleanUser.toLowerCase();
+
+    await executeTransaction(async (store) => {
+      // 1. Update in students map if present
+      if (store.students[cleanUser]) {
+        store.students[cleanUser].avatar = avatar;
+      } else if (store.students[lowerUser]) {
+        store.students[lowerUser].avatar = avatar;
+      } else {
+        // Find by username case-insensitively
+        const keys = Object.keys(store.students);
+        for (const k of keys) {
+          if (store.students[k] && String(store.students[k].username || '').toLowerCase() === lowerUser) {
+            store.students[k].avatar = avatar;
+            break;
+          }
+        }
+      }
+
+      // 2. Retroactively update all submissions by this student so the leaderboard reflects the new avatar
+      store.history.forEach((sub) => {
+        if (sub && String(sub.username || '').toLowerCase() === lowerUser) {
+          sub.avatar = avatar;
+        }
+      });
+    });
+
+    console.log(`[AVATAR] Updated avatar for student ${cleanUser}`);
+    res.json({ success: true, avatar, message: 'Đã cập nhật ảnh đại diện thành công!' });
+  } catch (err: any) {
+    console.error('Avatar update error:', err);
+    res.status(500).json({ success: false, error: err?.message || 'Lỗi cập nhật ảnh đại diện' });
   }
 });
 

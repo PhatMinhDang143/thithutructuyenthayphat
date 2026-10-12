@@ -3,7 +3,8 @@ import { ExamSubmission, QuestionTimingRecord, ExamItem } from '../../types';
 import { 
   Trash2, ShieldCheck, AlertTriangle, Filter, Search, Award, CheckSquare, Square, 
   RefreshCw, UserCheck, HelpCircle, CheckCircle2, Calculator, Upload, ClipboardPaste, 
-  X, Clock, Zap, BarChart2, FileSpreadsheet, Check
+  X, Clock, Zap, BarChart2, FileSpreadsheet, Check, Eye, EyeOff, ChevronUp, ChevronDown, 
+  Users, TrendingUp, TrendingDown
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { clearExamHistory, deleteHistoryEntries, getAuthToken, safeFetchJson, regradeAllSubmissionsLocally, getLocalExams, calculateScoreLocally, normalizeExamTitle, getApiUrl, safeSetItem, STORAGE_KEYS } from '../../services/storageService';
@@ -43,6 +44,7 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [pasteData, setPasteData] = useState('');
   const [selectedTimingSubmission, setSelectedTimingSubmission] = useState<ExamSubmission | null>(null);
+  const [showStudentList, setShowStudentList] = useState(false);
 
   // Extract unique exam titles for filter dropdown
   const uniqueExamTitles = Array.from(
@@ -255,6 +257,19 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
       (h.group || '').toLowerCase().includes(searchTerm.toLowerCase());
     return matchesClass && matchesExam && matchesSearch;
   });
+
+  // Derived metrics for overview cards
+  const totalSubmissions = filteredHistory.length;
+  const scoreValues = filteredHistory.map((h) => Number(h.score) || 0);
+  const avgScore = totalSubmissions > 0
+    ? (scoreValues.reduce((a, b) => a + b, 0) / totalSubmissions).toFixed(1)
+    : '0';
+  const passedCount = scoreValues.filter((s) => s >= 5.0).length;
+  const failedCount = totalSubmissions - passedCount;
+  const passRate = totalSubmissions > 0 ? Math.round((passedCount / totalSubmissions) * 100) : 0;
+  const highestScore = scoreValues.length > 0 ? Math.max(...scoreValues) : 0;
+  const lowestScore = scoreValues.length > 0 ? Math.min(...scoreValues) : 0;
+  const violationsCount = filteredHistory.filter((h) => h.cheat && String(h.cheat) !== '0 lần').length;
 
   const allFilteredIds = filteredHistory.map((h, idx) => h.id || `sub_idx_${idx}`);
   const isAllSelected = allFilteredIds.length > 0 && allFilteredIds.every((id) => selectedIds.includes(id));
@@ -657,8 +672,128 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto custom-scroll flex-1 px-3 sm:px-6 pb-4 sm:pb-6">
+      {/* Summary Metric Stats Cards */}
+      <div className="px-3 sm:px-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="bg-[#F8F9FA] p-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+          <div className="text-[10px] font-black text-neutral-600 uppercase tracking-wider">Tổng Bài Nộp</div>
+          <div className="text-xl sm:text-2xl font-black text-[#111111] mt-0.5 flex items-baseline gap-1">
+            {totalSubmissions}
+            <span className="text-[11px] font-normal text-neutral-600">bài</span>
+          </div>
+          <div className="text-[10px] text-neutral-500 font-bold mt-0.5">
+            {selectedClass === 'Tất cả' ? 'Tất cả các lớp' : `Lớp ${selectedClass}`}
+          </div>
+        </div>
+
+        <div className="bg-[#FFF9E6] p-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+          <div className="text-[10px] font-black text-amber-800 uppercase tracking-wider">Điểm Trung Bình</div>
+          <div className="text-xl sm:text-2xl font-black text-amber-900 mt-0.5 flex items-baseline gap-1">
+            {avgScore}
+            <span className="text-xs font-normal text-amber-700">/ 10</span>
+          </div>
+          <div className="text-[10px] text-amber-800 font-bold mt-0.5">
+            Cao nhất: {highestScore} | Thấp nhất: {lowestScore}
+          </div>
+        </div>
+
+        <div className="bg-[#EBFBF5] p-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+          <div className="text-[10px] font-black text-emerald-800 uppercase tracking-wider">Đạt (≥ 5.0)</div>
+          <div className="text-xl sm:text-2xl font-black text-emerald-700 mt-0.5 flex items-baseline gap-1">
+            {passedCount}
+            <span className="text-xs font-normal text-emerald-700">({passRate}%)</span>
+          </div>
+          <div className="text-[10px] text-emerald-800 font-bold mt-0.5">
+            Học sinh đạt chuẩn
+          </div>
+        </div>
+
+        <div className="bg-[#FFF0F0] p-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+          <div className="text-[10px] font-black text-rose-800 uppercase tracking-wider">Chưa Đạt (&lt; 5.0)</div>
+          <div className="text-xl sm:text-2xl font-black text-rose-700 mt-0.5 flex items-baseline gap-1">
+            {failedCount}
+            <span className="text-xs font-normal text-rose-600">({totalSubmissions > 0 ? 100 - passRate : 0}%)</span>
+          </div>
+          <div className="text-[10px] text-rose-800 font-bold mt-0.5">
+            Cần phụ đạo / nhắc nhở
+          </div>
+        </div>
+
+        <div className="col-span-2 sm:col-span-1 bg-[#F0F4FF] p-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+          <div className="text-[10px] font-black text-indigo-800 uppercase tracking-wider">Cảnh Báo Vi Phạm</div>
+          <div className="text-xl sm:text-2xl font-black text-indigo-700 mt-0.5 flex items-baseline gap-1">
+            {violationsCount}
+            <span className="text-[11px] font-normal text-indigo-600">lượt</span>
+          </div>
+          <div className="text-[10px] text-indigo-800 font-bold mt-0.5">
+            Rời tab / mở ứng dụng khác
+          </div>
+        </div>
+      </div>
+
+      {/* Selection-First Student List Section */}
+      {!showStudentList ? (
+        <div className="mx-3 sm:mx-6 p-6 sm:p-8 bg-[#FDF6E9] border-3 border-[#111111] shadow-[5px_5px_0px_#111111] text-center space-y-4">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-[#FFC93C] border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+            <Users className="w-6 h-6 text-[#111111]" />
+          </div>
+
+          <div>
+            <h3 className="text-base sm:text-lg font-black uppercase text-[#111111]">
+              Bảng Điểm Chi Tiết ({totalSubmissions} Bài Nộp)
+            </h3>
+            <p className="text-xs sm:text-sm text-neutral-700 font-bold max-w-xl mx-auto mt-1">
+              Giao diện hiện đang ở chế độ xem tóm tắt thống kê. Khi bạn cần xem chi tiết từng thí sinh, hãy nhấn nút bên dưới để mở rộng bảng điểm.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => setShowStudentList(true)}
+              className="px-6 py-3 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] font-black uppercase text-xs sm:text-sm shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <Eye className="w-4 h-4" />
+              <span>Xem Danh Sách Học Sinh ({totalSubmissions} bài)</span>
+            </button>
+
+            {totalSubmissions > 0 && (
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="px-5 py-3 bg-[#4D6BFE] hover:bg-[#3b5bdb] text-white border-2 border-[#111111] font-black uppercase text-xs sm:text-sm shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] flex items-center gap-2 transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Xuất File Excel</span>
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col px-3 sm:px-6 pb-4 sm:pb-6 space-y-2">
+          {/* Active Student List Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-[#111111] text-white border-2 border-[#111111] shadow-[3px_3px_0px_#FFC93C]">
+            <div className="flex items-center gap-2 text-xs font-bold">
+              <span className="p-1 bg-[#FFC93C] text-[#111111] border border-white font-black text-[10px]">
+                ĐANG HIỂN THỊ
+              </span>
+              <span>
+                Danh sách <strong>{totalSubmissions}</strong> học sinh nộp bài
+                {selectedIds.length > 0 && ` (Đã chọn: ${selectedIds.length})`}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowStudentList(false)}
+              className="px-3 py-1 bg-white hover:bg-neutral-100 text-[#111111] font-black text-xs border border-white flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              <span>Thu Gọn Danh Sách</span>
+            </button>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto custom-scroll border-2 border-[#111111] shadow-[4px_4px_0px_#111111] bg-white">
         <table className="w-full min-w-[760px] text-left border-collapse border-2 border-[#111111]">
           <thead>
             <tr className="text-xs uppercase tracking-wider font-black text-[#111111] bg-[#FDF6E9] border-b-2 border-[#111111]">
@@ -766,20 +901,26 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
                   </td>
                   <td className="p-3.5 text-center border-r-2 border-neutral-200">
                     <div className="flex justify-center">
-                      <span
-                        className={`px-3 py-1 text-[11px] font-black flex items-center gap-1.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111] w-max ${
-                          h.cheat && h.cheat.includes('0')
-                            ? 'bg-[#FDF6E9] text-neutral-700'
-                            : 'bg-[#E63946] text-white'
-                        }`}
-                      >
-                        {h.cheat && h.cheat.includes('0') ? (
-                          <ShieldCheck className="w-3.5 h-3.5 text-[#0F9D58]" />
-                        ) : (
-                          <AlertTriangle className="w-3.5 h-3.5 text-white" />
-                        )}
-                        {h.cheat && h.cheat.includes('0') ? 'Tuyệt đối an toàn' : h.cheat}
-                      </span>
+                      {(() => {
+                        const cheatVal = h.cheat || '0 lần';
+                        const isSafe = !h.cheat || cheatVal === '0 lần' || cheatVal === '0';
+                        return (
+                          <span
+                            className={`px-3 py-1 text-[11px] font-black flex items-center gap-1.5 border-2 border-[#111111] shadow-[2px_2px_0px_#111111] w-max ${
+                              isSafe
+                                ? 'bg-[#FDF6E9] text-neutral-700'
+                                : 'bg-[#E63946] text-white'
+                            }`}
+                          >
+                            {isSafe ? (
+                              <ShieldCheck className="w-3.5 h-3.5 text-[#0F9D58]" />
+                            ) : (
+                              <AlertTriangle className="w-3.5 h-3.5 text-white" />
+                            )}
+                            {isSafe ? '0 lần (An toàn)' : cheatVal}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td className="p-3.5 text-center" onClick={(e) => e.stopPropagation()}>
@@ -806,6 +947,8 @@ export const HistoryViewer: React.FC<HistoryViewerProps> = ({ history, classes, 
           </tbody>
         </table>
       </div>
+    </div>
+  )}
 
       {/* Secret Question Timing Telemetry Detail Modal (Teacher Only) */}
       {selectedTimingSubmission && selectedTimingSubmission.timing && (

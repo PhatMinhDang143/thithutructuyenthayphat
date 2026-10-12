@@ -3,7 +3,8 @@ import {
   BarChart2, AlertTriangle, CheckCircle2, XCircle, Search, Filter, 
   Copy, Check, X, Users, BookOpen, ArrowUpRight, ArrowDownRight, 
   HelpCircle, Sparkles, TrendingUp, TrendingDown, Layers, FileText,
-  FileSpreadsheet, Download
+  FileSpreadsheet, Download, Eye, EyeOff, ShieldCheck, Clock, Zap,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ExamItem, ExamSubmission } from '../../types';
@@ -61,14 +62,10 @@ export const QuestionAnalyticsModal: React.FC<QuestionAnalyticsModalProps> = ({
 }) => {
   if (!embedded && !isOpen) return null;
 
-  // Selected Exam
+  // Selected Exam (require explicit selection if initialExamId is not provided)
   const [selectedExamId, setSelectedExamId] = useState<string>(() => {
     if (initialExamId && exams.some((e) => e.id === initialExamId)) return initialExamId;
-    // Default to first exam that has submissions in history
-    const examWithSubmissions = exams.find((ex) =>
-      history.some((h) => normalizeExamTitle(h.examTitle) === normalizeExamTitle(ex.title))
-    );
-    return examWithSubmissions ? examWithSubmissions.id : exams[0]?.id || '';
+    return '';
   });
 
   // Filter Class
@@ -80,8 +77,16 @@ export const QuestionAnalyticsModal: React.FC<QuestionAnalyticsModalProps> = ({
   const [copiedReport, setCopiedReport] = useState(false);
   const [exportedExcel, setExportedExcel] = useState(false);
 
+  // View mode: 'analytics' (question analysis) or 'students' (student list)
+  const [activeViewMode, setActiveViewMode] = useState<'analytics' | 'students'>('analytics');
+  const [studentSearchTerm, setStudentSearchTerm] = useState('');
+  const [studentResultFilter, setStudentResultFilter] = useState<'all' | 'passed' | 'failed'>('all');
+  const [selectedStudentForDetails, setSelectedStudentForDetails] = useState<ExamSubmission | null>(null);
+  const [expandedQuestionKey, setExpandedQuestionKey] = useState<string | null>(null);
+
   const selectedExam = useMemo(() => {
-    return exams.find((e) => e.id === selectedExamId) || exams[0] || null;
+    if (!selectedExamId) return null;
+    return exams.find((e) => e.id === selectedExamId) || null;
   }, [exams, selectedExamId]);
 
   // Filter submissions matching this exam & class
@@ -464,6 +469,23 @@ export const QuestionAnalyticsModal: React.FC<QuestionAnalyticsModalProps> = ({
     };
   };
 
+  // Filtered student submissions for the student list tab
+  const studentListFiltered = useMemo(() => {
+    return filteredSubmissions.filter((s) => {
+      const scoreNum = Number(s.score) || 0;
+      if (studentResultFilter === 'passed' && scoreNum < 5.0) return false;
+      if (studentResultFilter === 'failed' && scoreNum >= 5.0) return false;
+      if (studentSearchTerm.trim()) {
+        const query = studentSearchTerm.toLowerCase();
+        const matchName = (s.name || '').toLowerCase().includes(query);
+        const matchUser = (s.username || '').toLowerCase().includes(query);
+        const matchGroup = (s.group || '').toLowerCase().includes(query);
+        return matchName || matchUser || matchGroup;
+      }
+      return true;
+    });
+  }, [filteredSubmissions, studentResultFilter, studentSearchTerm]);
+
   // Copy full analytics report to clipboard
   const handleCopyReport = () => {
     if (!selectedExam) return;
@@ -757,9 +779,13 @@ export const QuestionAnalyticsModal: React.FC<QuestionAnalyticsModalProps> = ({
               <BookOpen className="w-4 h-4 text-[#111111] shrink-0" />
               <select
                 value={selectedExamId}
-                onChange={(e) => setSelectedExamId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedExamId(e.target.value);
+                  setActiveViewMode('analytics');
+                }}
                 className="w-full bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] px-3 py-1.5 text-xs sm:text-sm font-bold text-[#111111] focus:outline-none focus:ring-2 focus:ring-[#4D6BFE]"
               >
+                <option value="">-- Vui lòng chọn đề thi ({exams.length} đề) --</option>
                 {exams.map((ex) => {
                   const subCount = history.filter(
                     (h) => normalizeExamTitle(h.examTitle) === normalizeExamTitle(ex.title)
@@ -779,7 +805,8 @@ export const QuestionAnalyticsModal: React.FC<QuestionAnalyticsModalProps> = ({
               <select
                 value={selectedClass}
                 onChange={(e) => setSelectedClass(e.target.value)}
-                className="bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] px-3 py-1.5 text-xs sm:text-sm font-bold text-[#111111] focus:outline-none focus:ring-2 focus:ring-[#4D6BFE]"
+                disabled={!selectedExam}
+                className="bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] px-3 py-1.5 text-xs sm:text-sm font-bold text-[#111111] focus:outline-none focus:ring-2 focus:ring-[#4D6BFE] disabled:bg-neutral-100 disabled:text-neutral-400"
               >
                 <option value="Tất cả">Tất cả các lớp</option>
                 {availableClasses.map((cls) => (
@@ -795,7 +822,12 @@ export const QuestionAnalyticsModal: React.FC<QuestionAnalyticsModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={handleExportExcel}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#4D6BFE] hover:bg-[#3b5bdb] text-white font-black text-xs sm:text-sm border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-0.5 active:translate-y-0.5 transition-all cursor-pointer"
+              disabled={!selectedExam || filteredSubmissions.length === 0}
+              className={`flex items-center gap-1.5 px-3 py-1.5 font-black text-xs sm:text-sm border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-0.5 active:translate-y-0.5 transition-all ${
+                !selectedExam || filteredSubmissions.length === 0
+                  ? 'bg-neutral-200 text-neutral-400 border-neutral-400 shadow-none cursor-not-allowed'
+                  : 'bg-[#4D6BFE] hover:bg-[#3b5bdb] text-white cursor-pointer'
+              }`}
               title="Xuất báo cáo thống kê câu đúng / sai & bảng điểm ra file Excel (.xlsx)"
             >
               {exportedExcel ? <Check className="w-4 h-4 text-emerald-300" /> : <FileSpreadsheet className="w-4 h-4" />}
@@ -804,7 +836,12 @@ export const QuestionAnalyticsModal: React.FC<QuestionAnalyticsModalProps> = ({
 
             <button
               onClick={handleCopyReport}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#00E599] hover:bg-[#00c784] text-[#111111] font-black text-xs sm:text-sm border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-0.5 active:translate-y-0.5 transition-all cursor-pointer"
+              disabled={!selectedExam || filteredSubmissions.length === 0}
+              className={`flex items-center gap-1.5 px-3 py-1.5 font-black text-xs sm:text-sm border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-0.5 active:translate-y-0.5 transition-all ${
+                !selectedExam || filteredSubmissions.length === 0
+                  ? 'bg-neutral-200 text-neutral-400 border-neutral-400 shadow-none cursor-not-allowed'
+                  : 'bg-[#00E599] hover:bg-[#00c784] text-[#111111] cursor-pointer'
+              }`}
             >
               {copiedReport ? <Check className="w-4 h-4 text-emerald-800" /> : <Copy className="w-4 h-4" />}
               {copiedReport ? 'Đã Sao Chép Báo Cáo!' : 'Sao Chép Báo Cáo'}
@@ -812,59 +849,325 @@ export const QuestionAnalyticsModal: React.FC<QuestionAnalyticsModalProps> = ({
           </div>
         </div>
 
-        {/* Scrollable Content Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-white">
-          
-          {/* Summary Metric Stats */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
-            <div className="bg-[#F8F9FA] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
-              <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">Tổng Lượt Nộp</div>
-              <div className="text-xl sm:text-2xl font-black text-[#111111] mt-1 flex items-baseline gap-1">
-                {filteredSubmissions.length}
-                <span className="text-xs font-normal text-gray-600">bài thi</span>
-              </div>
+        {/* View Mode Navigation Switcher (Only when an exam is selected) */}
+        {selectedExam && (
+          <div className="flex flex-wrap items-center justify-between border-b-2 border-[#111111] bg-[#FDF6E9] px-4 sm:px-6 py-2 shrink-0 gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveViewMode('analytics')}
+                className={`px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-black border-2 border-[#111111] transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeViewMode === 'analytics'
+                    ? 'bg-[#111111] text-white shadow-[2px_2px_0px_#00E599]'
+                    : 'bg-white text-[#111111] hover:bg-neutral-100 shadow-[2px_2px_0px_#111111]'
+                }`}
+              >
+                <BarChart2 className="w-4 h-4 text-[#00E599]" />
+                <span>Phân Tích Câu Hỏi (Đúng / Sai)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveViewMode('students')}
+                className={`px-3 sm:px-4 py-1.5 text-xs sm:text-sm font-black border-2 border-[#111111] transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeViewMode === 'students'
+                    ? 'bg-[#111111] text-white shadow-[2px_2px_0px_#FFC93C]'
+                    : 'bg-white text-[#111111] hover:bg-neutral-100 shadow-[2px_2px_0px_#111111]'
+                }`}
+              >
+                <Users className="w-4 h-4 text-[#FFC93C]" />
+                <span>Danh Sách Học Sinh Nộp Bài ({filteredSubmissions.length})</span>
+              </button>
             </div>
 
-            <div className="bg-[#FFF9E6] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
-              <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">Điểm Trung Bình</div>
-              <div className="text-xl sm:text-2xl font-black text-amber-900 mt-1 flex items-baseline gap-1">
-                {scoreStats.avg}
-                <span className="text-xs font-normal text-amber-700">/ 10</span>
-              </div>
-            </div>
-
-            <div className="bg-[#EBFBF5] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
-              <div className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Đạt (≥ 5.0)</div>
-              <div className="text-xl sm:text-2xl font-black text-emerald-700 mt-1 flex items-baseline gap-1">
-                {scoreStats.passed}
-                <span className="text-xs font-normal text-emerald-700">
-                  ({filteredSubmissions.length > 0 ? Math.round((scoreStats.passed / filteredSubmissions.length) * 100) : 0}%)
-                </span>
-              </div>
-            </div>
-
-            <div className="bg-[#FFF0F0] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
-              <div className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">Chưa Đạt (&lt; 5.0)</div>
-              <div className="text-xl sm:text-2xl font-black text-rose-700 mt-1 flex items-baseline gap-1">
-                {scoreStats.failed}
-                <span className="text-xs font-normal text-rose-600">
-                  ({filteredSubmissions.length > 0 ? Math.round((scoreStats.failed / filteredSubmissions.length) * 100) : 0}%)
-                </span>
-              </div>
-            </div>
-
-            <div className="col-span-2 sm:col-span-1 bg-[#F0F4FF] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
-              <div className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Tổng Số Câu</div>
-              <div className="text-xl sm:text-2xl font-black text-indigo-700 mt-1 flex items-baseline gap-1">
-                {questionStats.length}
-                <span className="text-xs font-normal text-indigo-600">câu hỏi</span>
-              </div>
+            <div className="text-xs font-bold text-neutral-600 hidden md:block">
+              {activeViewMode === 'analytics'
+                ? `Đang phân tích câu hỏi đề: ${selectedExam.title}`
+                : `Bảng điểm chi tiết (${filteredSubmissions.length} bài thi): ${selectedExam.title}`}
             </div>
           </div>
+        )}
 
-          {filteredSubmissions.length === 0 ? (
-            <div className="text-center py-12 px-4 border-2 border-dashed border-gray-300 bg-gray-50">
-              <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
+        {/* Scrollable Content Body */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-white">
+          {!selectedExam ? (
+            <div className="p-6 sm:p-10 max-w-4xl mx-auto text-center space-y-6 flex-1 flex flex-col justify-center">
+              <div className="w-16 h-16 bg-[#FFC93C] border-3 border-[#111111] shadow-[3px_3px_0px_#111111] flex items-center justify-center mx-auto">
+                <BookOpen className="w-8 h-8 text-[#111111]" />
+              </div>
+
+              <div>
+                <h3 className="text-xl sm:text-2xl font-black uppercase text-[#111111]">
+                  Vui Lòng Chọn Đề Thi Để Bắt Đầu Phân Tích & Xem Thống Kê
+                </h3>
+                <p className="text-xs sm:text-sm text-neutral-600 font-bold max-w-lg mx-auto mt-2">
+                  Hệ thống không tự động bung dữ liệu để tránh làm rối mắt. Hãy chọn một đề thi cụ thể bên dưới hoặc dùng hộp chọn ở thanh công cụ phía trên.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-left pt-2">
+                {exams.map((ex) => {
+                  const subCount = history.filter(
+                    (h) => normalizeExamTitle(h.examTitle) === normalizeExamTitle(ex.title)
+                  ).length;
+                  return (
+                    <div
+                      key={ex.id}
+                      onClick={() => {
+                        setSelectedExamId(ex.id);
+                        setActiveViewMode('analytics');
+                      }}
+                      className="p-4 bg-white hover:bg-[#FDF6E9] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-0.5 active:translate-y-0.5 transition-all cursor-pointer flex flex-col justify-between group"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2 py-0.5 bg-[#4D6BFE] text-white text-[10px] font-black uppercase">
+                            {ex.subject || 'Đề Thi'}
+                          </span>
+                          <span className="text-[11px] font-bold text-neutral-500">
+                            {ex.durationMinutes || 45} phút
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-black text-[#111111] mt-2 line-clamp-2 group-hover:text-[#4D6BFE] transition-colors">
+                          {ex.title}
+                        </h4>
+                      </div>
+
+                      <div className="mt-4 pt-3 border-t-2 border-neutral-100 flex items-center justify-between">
+                        <span className="text-xs font-bold text-neutral-700 flex items-center gap-1.5">
+                          <Users className="w-3.5 h-3.5 text-[#0F9D58]" />
+                          <strong>{subCount}</strong> bài đã nộp
+                        </span>
+                        <span className="text-xs font-black text-[#4D6BFE] group-hover:translate-x-1 transition-transform">
+                          Chọn đề &rarr;
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : activeViewMode === 'students' ? (
+            <div className="space-y-4">
+              {/* Filter & Search Bar for students */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FDF6E9] p-3 border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
+                <div className="flex items-center gap-2 flex-1">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-neutral-500" />
+                    <input
+                      type="text"
+                      value={studentSearchTerm}
+                      onChange={(e) => setStudentSearchTerm(e.target.value)}
+                      placeholder="Tìm theo tên học sinh, SBD hoặc lớp..."
+                      className="w-full pl-9 pr-3 py-1.5 bg-white border-2 border-[#111111] text-xs font-bold text-[#111111] outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setStudentResultFilter('all')}
+                    className={`px-3 py-1 text-xs font-black border-2 border-[#111111] transition-all cursor-pointer ${
+                      studentResultFilter === 'all'
+                        ? 'bg-[#111111] text-white'
+                        : 'bg-white text-[#111111] hover:bg-neutral-100'
+                    }`}
+                  >
+                    Tất Cả ({filteredSubmissions.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudentResultFilter('passed')}
+                    className={`px-3 py-1 text-xs font-black border-2 border-[#111111] transition-all cursor-pointer ${
+                      studentResultFilter === 'passed'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-white text-emerald-700 hover:bg-emerald-50'
+                    }`}
+                  >
+                    Đạt ({scoreStats.passed})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudentResultFilter('failed')}
+                    className={`px-3 py-1 text-xs font-black border-2 border-[#111111] transition-all cursor-pointer ${
+                      studentResultFilter === 'failed'
+                        ? 'bg-rose-600 text-white'
+                        : 'bg-white text-rose-700 hover:bg-rose-50'
+                    }`}
+                  >
+                    Chưa Đạt ({scoreStats.failed})
+                  </button>
+                </div>
+              </div>
+
+              {/* Students Table */}
+              <div className="overflow-x-auto border-2 border-[#111111] shadow-[3px_3px_0px_#111111] bg-white">
+                <table className="w-full min-w-[700px] text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-[#FDF6E9] border-b-2 border-[#111111] font-black uppercase text-[#111111]">
+                      <th className="p-3 w-12 text-center border-r-2 border-[#111111]">STT</th>
+                      <th className="p-3 border-r-2 border-[#111111]">Họ và Tên (SBD)</th>
+                      <th className="p-3 border-r-2 border-[#111111]">Lớp</th>
+                      <th className="p-3 border-r-2 border-[#111111]">Điểm & Đánh Giá</th>
+                      <th className="p-3 border-r-2 border-[#111111] text-center">Đúng / Sai</th>
+                      <th className="p-3 border-r-2 border-[#111111] text-center">Thời Gian Làm Bài</th>
+                      <th className="p-3 border-r-2 border-[#111111] text-center">Giám Sát</th>
+                      <th className="p-3 text-center w-28">Chi Tiết</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y-2 divide-neutral-200">
+                    {studentListFiltered.map((sub, idx) => {
+                      const stats = getSubmissionStats(sub);
+                      return (
+                        <tr key={sub.id || idx} className="hover:bg-[#FDF6E9]/60 transition-colors">
+                          <td className="p-3 text-center font-bold text-neutral-500 border-r-2 border-neutral-200">
+                            {idx + 1}
+                          </td>
+                          <td className="p-3 border-r-2 border-neutral-200">
+                            <div className="font-black text-[#111111] text-sm">{sub.name}</div>
+                            <div className="text-[11px] font-mono text-neutral-500 font-bold">{sub.username}</div>
+                          </td>
+                          <td className="p-3 font-black text-[#4D6BFE] uppercase border-r-2 border-neutral-200">
+                            {sub.group || 'Khách'}
+                          </td>
+                          <td className="p-3 border-r-2 border-neutral-200">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-base font-black text-[#0F9D58]">{stats.score}</span>
+                              <span
+                                className={`px-1.5 py-0.2 text-[10px] font-black uppercase border rounded ${
+                                  stats.result === 'Đạt'
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-400'
+                                    : 'bg-rose-100 text-rose-800 border-rose-400'
+                                }`}
+                              >
+                                {stats.result}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-center border-r-2 border-neutral-200 font-bold">
+                            <span className="text-emerald-700">{stats.correct}</span> / <span className="text-rose-600">{stats.wrong}</span>
+                            {stats.total > 0 && <span className="text-neutral-400 font-normal"> ({stats.total}c)</span>}
+                          </td>
+                          <td className="p-3 text-center border-r-2 border-neutral-200">
+                            <div className="font-bold text-neutral-700">{stats.duration}</div>
+                          </td>
+                          <td className="p-3 text-center border-r-2 border-neutral-200">
+                            {sub.cheat && String(sub.cheat) !== '0 lần' ? (
+                              <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 border border-rose-300 font-black text-[10px]">
+                                {sub.cheat}
+                              </span>
+                            ) : (
+                              <span className="text-emerald-700 font-bold text-[11px] flex items-center justify-center gap-1">
+                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Nghiêm túc
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedStudentForDetails(sub)}
+                              className="px-2.5 py-1 bg-[#4D6BFE] hover:bg-[#3b5bdb] text-white border border-[#111111] font-black text-[11px] shadow-[1px_1px_0px_#111111] transition-all cursor-pointer"
+                            >
+                              Xem Bài &rarr;
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {studentListFiltered.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-neutral-500 font-bold">
+                          Không tìm thấy học sinh nào phù hợp với bộ lọc tìm kiếm.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Summary Metric Stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+                <div className="bg-[#F8F9FA] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+                  <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">Tổng Lượt Nộp</div>
+                  <div className="text-xl sm:text-2xl font-black text-[#111111] mt-1 flex items-baseline gap-1">
+                    {filteredSubmissions.length}
+                    <span className="text-xs font-normal text-gray-600">bài thi</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#FFF9E6] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+                  <div className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">Điểm Trung Bình</div>
+                  <div className="text-xl sm:text-2xl font-black text-amber-900 mt-1 flex items-baseline gap-1">
+                    {scoreStats.avg}
+                    <span className="text-xs font-normal text-amber-700">/ 10</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#EBFBF5] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+                  <div className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Đạt (≥ 5.0)</div>
+                  <div className="text-xl sm:text-2xl font-black text-emerald-700 mt-1 flex items-baseline gap-1">
+                    {scoreStats.passed}
+                    <span className="text-xs font-normal text-emerald-700">
+                      ({filteredSubmissions.length > 0 ? Math.round((scoreStats.passed / filteredSubmissions.length) * 100) : 0}%)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-[#FFF0F0] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+                  <div className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">Chưa Đạt (&lt; 5.0)</div>
+                  <div className="text-xl sm:text-2xl font-black text-rose-700 mt-1 flex items-baseline gap-1">
+                    {scoreStats.failed}
+                    <span className="text-xs font-normal text-rose-600">
+                      ({filteredSubmissions.length > 0 ? Math.round((scoreStats.failed / filteredSubmissions.length) * 100) : 0}%)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-[#FFF5F5] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+                  <div className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">Cảnh Báo Rời Tab</div>
+                  <div className="text-xl sm:text-2xl font-black text-rose-700 mt-1 flex items-baseline gap-1">
+                    {filteredSubmissions.filter((s) => s.cheat && String(s.cheat) !== '0 lần').length}
+                    <span className="text-xs font-normal text-rose-600">lượt</span>
+                  </div>
+                  <div className="text-[10px] text-neutral-600 font-bold mt-0.5">
+                    Giám sát rời màn hình
+                  </div>
+                </div>
+
+                <div className="col-span-2 sm:col-span-1 bg-[#F0F4FF] p-3 sm:p-4 border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+                  <div className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Tổng Số Câu</div>
+                  <div className="text-xl sm:text-2xl font-black text-indigo-700 mt-1 flex items-baseline gap-1">
+                    {questionStats.length}
+                    <span className="text-xs font-normal text-indigo-600">câu hỏi</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick banner linking to Student List */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-[#FDF6E9] border-2 border-[#111111] shadow-[3px_3px_0px_#111111]">
+                <div className="flex items-center gap-2.5">
+                  <Users className="w-5 h-5 text-[#4D6BFE] shrink-0" />
+                  <span className="text-xs sm:text-sm font-bold text-neutral-800">
+                    Đã ghi nhận <strong>{filteredSubmissions.length} bài làm</strong> của học sinh cho đề thi này.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveViewMode('students')}
+                  className="px-4 py-2 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] font-black text-xs shadow-[2px_2px_0px_#111111] flex items-center justify-center gap-2 shrink-0 transition-all cursor-pointer"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>Xem Danh Sách Học Sinh &rarr;</span>
+                </button>
+              </div>
+
+              {filteredSubmissions.length === 0 ? (
+                <div className="text-center py-12 px-4 border-2 border-dashed border-gray-300 bg-gray-50">
+                  <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-3" />
               <h3 className="text-lg font-black text-gray-800">Chưa Có Lượt Nộp Bài Nào</h3>
               <p className="text-sm text-gray-600 mt-1 max-w-md mx-auto">
                 Chưa có học sinh nào thuộc {selectedClass === 'Tất cả' ? 'các lớp' : `lớp ${selectedClass}`} nộp bài cho đề thi này. Hãy chọn đề thi khác hoặc mời học sinh làm bài!
@@ -1219,6 +1522,8 @@ export const QuestionAnalyticsModal: React.FC<QuestionAnalyticsModalProps> = ({
               </div>
             </>
           )}
+            </>
+          )}
 
         </div>
 
@@ -1236,6 +1541,176 @@ export const QuestionAnalyticsModal: React.FC<QuestionAnalyticsModalProps> = ({
             </button>
           )}
         </div>
+
+        {/* Student Submission Detail Modal */}
+        {selectedStudentForDetails && (
+          <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+            <div className="bg-white border-3 border-[#111111] shadow-[6px_6px_0px_#111111] max-w-2xl w-full max-h-[85vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b-2 border-[#111111] bg-[#FDF6E9]">
+                <div>
+                  <span className="px-2 py-0.5 bg-[#4D6BFE] text-white text-[10px] font-black uppercase">
+                    Chi Tiết Bài Làm Của Thí Sinh
+                  </span>
+                  <h3 className="text-base sm:text-lg font-black text-[#111111] mt-1">
+                    {selectedStudentForDetails.name} - Lớp {selectedStudentForDetails.group || 'Khách'}
+                  </h3>
+                  <div className="text-xs text-neutral-600 font-bold flex items-center gap-3 mt-1">
+                    <span>SBD: <strong className="font-mono">{selectedStudentForDetails.username}</strong></span>
+                    <span>Điểm: <strong className="text-emerald-700 text-sm">{selectedStudentForDetails.score} / 10</strong></span>
+                    {selectedStudentForDetails.timing?.formattedDuration && (
+                      <span>Thời gian: <strong>{selectedStudentForDetails.timing.formattedDuration}</strong></span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudentForDetails(null)}
+                  className="p-1.5 bg-white text-[#111111] hover:bg-rose-500 hover:text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] font-bold"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Answers breakdown */}
+              <div className="p-4 overflow-y-auto space-y-4 flex-1">
+                {(() => {
+                  let parsed = selectedStudentForDetails.details;
+                  if (typeof parsed === 'string') {
+                    try {
+                      parsed = JSON.parse(parsed);
+                    } catch (e) {
+                      parsed = null;
+                    }
+                  }
+                  const p1Ans = parsed?.p1 || {};
+                  const p2Ans = parsed?.p2 || {};
+                  const p3Ans = parsed?.p3 || {};
+                  const examP1Key = selectedExam?.answers?.p1 || {};
+                  const examP2Key = selectedExam?.answers?.p2 || {};
+                  const examP3Key = selectedExam?.answers?.p3 || {};
+
+                  return (
+                    <div className="space-y-4 text-xs">
+                      {/* Part I */}
+                      {Object.keys(examP1Key).length > 0 && (
+                        <div className="border-2 border-[#111111] p-3 bg-[#F8F9FA]">
+                          <h4 className="font-black uppercase text-[#111111] mb-2">Phần I: Trắc Nghiệm Nhiều Lựa Chọn</h4>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {Object.keys(examP1Key).map((k) => {
+                              const studentAns = String(p1Ans[k] || '').trim().toUpperCase();
+                              const correctAns = String(examP1Key[k] || '').trim().toUpperCase();
+                              const isCorrect = studentAns && studentAns === correctAns;
+                              return (
+                                <div
+                                  key={k}
+                                  className={`p-2 border font-bold flex items-center justify-between ${
+                                    isCorrect
+                                      ? 'bg-emerald-50 border-emerald-400 text-emerald-900'
+                                      : 'bg-rose-50 border-rose-300 text-rose-900'
+                                  }`}
+                                >
+                                  <span>Câu {k}: <strong>{studentAns || '(Trống)'}</strong></span>
+                                  {isCorrect ? (
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                  ) : (
+                                    <span className="text-[10px] text-rose-700">ĐA: {correctAns}</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Part II */}
+                      {Object.keys(examP2Key).length > 0 && (
+                        <div className="border-2 border-[#111111] p-3 bg-[#F8F9FA]">
+                          <h4 className="font-black uppercase text-[#111111] mb-2">Phần II: Đúng / Sai</h4>
+                          <div className="space-y-2">
+                            {Object.keys(examP2Key).map((k) => {
+                              const subObj = examP2Key[k] || {};
+                              const sSubObj = p2Ans[k] || {};
+                              return (
+                                <div key={k} className="p-2 bg-white border border-neutral-300">
+                                  <div className="font-black text-neutral-800 mb-1">Câu {k}:</div>
+                                  <div className="grid grid-cols-4 gap-2">
+                                    {(['a', 'b', 'c', 'd'] as const).map((subKey) => {
+                                      const sAns = normalizeTF(sSubObj[subKey]);
+                                      const cAns = normalizeTF(subObj[subKey]);
+                                      const isCorrect = sAns && sAns === cAns;
+                                      return (
+                                        <div
+                                          key={subKey}
+                                          className={`p-1.5 border text-center font-bold ${
+                                            isCorrect
+                                              ? 'bg-emerald-50 border-emerald-400 text-emerald-900'
+                                              : 'bg-rose-50 border-rose-300 text-rose-900'
+                                          }`}
+                                        >
+                                          <span>Ý {subKey}: {sAns || '-'}</span>
+                                          {!isCorrect && <div className="text-[9px] text-rose-700">ĐA: {cAns}</div>}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Part III */}
+                      {Object.keys(examP3Key).length > 0 && (
+                        <div className="border-2 border-[#111111] p-3 bg-[#F8F9FA]">
+                          <h4 className="font-black uppercase text-[#111111] mb-2">Phần III: Trả Lời Ngắn</h4>
+                          <div className="space-y-2">
+                            {Object.keys(examP3Key).map((k) => {
+                              const sAns = normalizeShortAnswer(p3Ans[k] || '');
+                              const cAns = normalizeShortAnswer(examP3Key[k] || '');
+                              const isCorrect = sAns && sAns === cAns;
+                              return (
+                                <div
+                                  key={k}
+                                  className={`p-2 border font-bold flex items-center justify-between ${
+                                    isCorrect
+                                      ? 'bg-emerald-50 border-emerald-400 text-emerald-900'
+                                      : 'bg-rose-50 border-rose-300 text-rose-900'
+                                  }`}
+                                >
+                                  <span>Câu {k}: Bài làm: <strong>{p3Ans[k] || '(Trống)'}</strong></span>
+                                  {isCorrect ? (
+                                    <span className="text-emerald-700 flex items-center gap-1 font-black">
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Chính xác
+                                    </span>
+                                  ) : (
+                                    <span className="text-rose-700 text-[11px]">Đáp án: {examP3Key[k]}</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Footer */}
+              <div className="p-3 bg-[#F4F4F0] border-t-2 border-[#111111] flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudentForDetails(null)}
+                  className="px-4 py-1.5 bg-[#111111] text-white text-xs font-black border-2 border-[#111111] shadow-[2px_2px_0px_#4D6BFE]"
+                >
+                  Đóng Chi Tiết
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
   );

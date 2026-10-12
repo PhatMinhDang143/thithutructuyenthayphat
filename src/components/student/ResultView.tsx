@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import { AppUser, ExamItem, ExamSubmission } from '../../types';
 import { 
   Trophy, CheckCircle, XCircle, ArrowLeft, FileText, CheckSquare, 
-  Award, Lock, ExternalLink, AlertTriangle, Filter, Eye, Sparkles, BookOpen, Clock, ShieldCheck
+  Award, Lock, ExternalLink, AlertTriangle, Filter, Eye, BookOpen, Clock, ShieldCheck
 } from 'lucide-react';
 import { normalizePdfUrl } from '../../utils/pdfUtils';
+import { ExamLeaderboard } from './ExamLeaderboard';
+import { UserAvatar } from '../common/UserAvatar';
+import { AvatarPickerModal } from '../common/AvatarPickerModal';
 
 interface ResultViewProps {
   user: AppUser;
@@ -12,6 +15,7 @@ interface ResultViewProps {
   resultData: ExamSubmission;
   leaderboard: ExamSubmission[];
   onBackToLobby: () => void;
+  onUpdateAvatar?: (newAvatar: string) => Promise<void> | void;
 }
 
 export const ResultView: React.FC<ResultViewProps> = ({
@@ -20,9 +24,11 @@ export const ResultView: React.FC<ResultViewProps> = ({
   resultData,
   leaderboard,
   onBackToLobby,
+  onUpdateAvatar,
 }) => {
   const [filterMode, setFilterMode] = useState<'all' | 'wrong' | 'correct'>('all');
   const [showPdfViewer, setShowPdfViewer] = useState(false);
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
 
   const cfg = exam.questions || {};
   const answerKey = resultData.correctAnswers || exam.answers || (resultData as any).answers || { p1: {}, p2: {}, p3: {} };
@@ -164,7 +170,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
           </header>
 
           {/* Submission Info Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4 mb-6">
             <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111]">
               <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Trạng Thái</p>
               <p className="text-base sm:text-lg font-black text-[#0F9D58] mt-1">ĐÃ LƯU BÀI</p>
@@ -183,13 +189,6 @@ export const ResultView: React.FC<ResultViewProps> = ({
                 {resultData.submitted_at || 'Vừa xong'}
               </p>
               <span className="text-[10px] font-black uppercase text-neutral-500">Giờ máy chủ</span>
-            </div>
-            <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111]">
-              <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Cảnh Báo</p>
-              <p className={`text-base sm:text-lg font-black mt-1 ${resultData.cheat && String(resultData.cheat) !== '0 lần' ? 'text-[#E63946]' : 'text-[#0F9D58]'}`}>
-                {resultData.cheat || '0 lần'}
-              </p>
-              <span className="text-[10px] font-black uppercase text-neutral-500">Rời màn hình</span>
             </div>
           </div>
 
@@ -243,16 +242,43 @@ export const ResultView: React.FC<ResultViewProps> = ({
     <div className="max-w-5xl mx-auto p-4 md:p-8 min-h-[calc(100dvh-80px)] flex flex-col justify-between text-[#111111]">
       <div>
         {/* Header */}
-        <header className="mb-6 bg-white border-3 border-[#111111] p-6 text-center shadow-[6px_6px_0px_#111111]">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-[#0F9D58] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs font-black uppercase mb-3">
-            <CheckCircle className="w-4 h-4" /> Đã Nộp Bài & Chấm Điểm Tự Động
+        <header className="mb-6 bg-white border-3 border-[#111111] p-5 sm:p-6 shadow-[6px_6px_0px_#111111]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <UserAvatar
+                avatar={user.avatar || resultData.avatar}
+                name={user.name}
+                size="lg"
+                showBorder={true}
+              />
+              <div className="text-left">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-[10px] font-black px-2 py-0.5 bg-[#0F9D58] text-white uppercase border border-[#111111]">
+                    Đã Hoàn Thành
+                  </span>
+                  <span className="text-xs text-neutral-600 font-bold uppercase">
+                    Lớp {user.group || 'Khách'}
+                  </span>
+                </div>
+                <h1 className="text-base sm:text-xl font-black uppercase tracking-tight text-[#111111]">
+                  {user.name}
+                </h1>
+                <p className="text-xs text-[#4D6BFE] font-bold">
+                  Đề thi: <strong>{exam.title}</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setShowAvatarModal(true)}
+                className="px-3.5 py-2 bg-white hover:bg-[#FDF6E9] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase transition-all cursor-pointer"
+              >
+                Đổi Avatar
+              </button>
+            </div>
           </div>
-          <h1 className="text-2xl md:text-4xl font-black uppercase tracking-tight text-[#111111] mb-2">
-            KẾT QUẢ VÀ ĐÁP ÁN CHI TIẾT
-          </h1>
-          <p className="text-sm sm:text-base text-[#4D6BFE] font-black uppercase tracking-wide bg-[#FDF6E9] py-1 px-4 inline-block border-2 border-[#111111] shadow-[2px_2px_0px_#111111]">
-            {exam.title}
-          </p>
         </header>
 
         {/* Score Cards & Key Statistics */}
@@ -265,7 +291,7 @@ export const ResultView: React.FC<ResultViewProps> = ({
           const submittedAtStr = resultData.submitted_at || 'Vừa xong';
 
           return (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4 mb-6">
               {/* 1. Điểm số & Xếp loại */}
               <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111] flex flex-col justify-between">
                 <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Điểm Số</p>
@@ -330,18 +356,6 @@ export const ResultView: React.FC<ResultViewProps> = ({
                   <span className="text-[10px] text-[#0F9D58] font-black">Hệ thống đã lưu</span>
                 </div>
                 <span className="text-[10px] font-black uppercase text-neutral-500">Giờ máy chủ</span>
-              </div>
-
-              {/* 6. Cảnh báo vi phạm */}
-              <div className="bg-white p-4 text-center border-3 border-[#111111] shadow-[4px_4px_0px_#111111] flex flex-col justify-between">
-                <p className="text-[11px] text-neutral-600 font-black uppercase mb-1">Cảnh Báo</p>
-                <div>
-                  <p className={`text-3xl md:text-4xl font-black ${resultData.cheat && String(resultData.cheat) !== '0 lần' ? 'text-[#E63946]' : 'text-neutral-700'}`}>
-                    {resultData.cheat || '0 lần'}
-                  </p>
-                  <p className="text-[10px] text-neutral-500 font-bold mt-1">Giám sát bài thi</p>
-                </div>
-                <span className="text-[10px] font-black uppercase text-neutral-500">Rời màn hình</span>
               </div>
             </div>
           );
@@ -691,54 +705,37 @@ export const ResultView: React.FC<ResultViewProps> = ({
         </div>
 
         {/* Leaderboard */}
-        <div className="bg-white border-3 border-[#111111] p-5 sm:p-7 shadow-[6px_6px_0px_#111111]">
-          <h3 className="text-base sm:text-lg font-black mb-4 uppercase text-[#111111] flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-[#FFC93C]" /> Bảng Xếp Hạng Đề Thi ({exam.title})
-          </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs md:text-sm text-[#111111]">
-              <thead>
-                <tr className="border-b-2 border-[#111111] bg-[#FDF6E9] text-[#111111] text-xs uppercase font-black">
-                  <th className="py-3 px-4 border-r border-[#111111]">Thứ Hạng</th>
-                  <th className="py-3 px-4 border-r border-[#111111]">Thí Sinh</th>
-                  <th className="py-3 px-4 border-r border-[#111111]">Lớp</th>
-                  <th className="py-3 px-4 text-right font-black">Điểm Số</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y-2 divide-neutral-200">
-                {leaderboard.map((item, idx) => {
-                  const isCurrent = item.username === user.username && item.name === user.name;
-                  return (
-                    <tr key={idx} className={isCurrent ? 'bg-[#FFF2B2] font-black' : 'hover:bg-[#FDF6E9]'}>
-                      <td className="py-3 px-4 border-r border-neutral-200 font-black">
-                        {idx === 0 && <span className="text-[#111111] bg-[#FFC93C] px-2 py-0.5 border border-[#111111]">🥇 Top 1</span>}
-                        {idx === 1 && <span className="text-[#111111] bg-neutral-200 px-2 py-0.5 border border-[#111111]">🥈 Top 2</span>}
-                        {idx === 2 && <span className="text-[#111111] bg-amber-200 px-2 py-0.5 border border-[#111111]">🥉 Top 3</span>}
-                        {idx > 2 && `${idx + 1}`}
-                      </td>
-                      <td className="py-3 px-4 border-r border-neutral-200 font-bold">{item.name} {isCurrent && '(Bạn)'}</td>
-                      <td className="py-3 px-4 border-r border-neutral-200 text-neutral-700 font-bold">{item.group || 'Khách'}</td>
-                      <td className="py-3 px-4 text-right font-black text-sm">{item.score}</td>
-                    </tr>
-                  );
-                })}
-                {leaderboard.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="py-8 text-center text-neutral-500 font-bold">Chưa có bảng xếp hạng cho đề thi này.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+        <div className="mt-8">
+          <ExamLeaderboard
+            examTitle={exam.title}
+            examDuration={exam.duration}
+            submissions={leaderboard}
+            currentUser={user}
+            onOpenAvatarPicker={() => setShowAvatarModal(true)}
+          />
         </div>
       </div>
 
       <button
         onClick={onBackToLobby}
-        className="w-full mt-8 bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] py-4 border-3 border-[#111111] shadow-[5px_5px_0px_#111111] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[2px_2px_0px_#111111] font-black uppercase transition-all tracking-wider flex items-center justify-center gap-2"
+        className="w-full mt-8 bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] py-4 border-3 border-[#111111] shadow-[5px_5px_0px_#111111] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[2px_2px_0px_#111111] font-black uppercase transition-all tracking-wider flex items-center justify-center gap-2 cursor-pointer"
       >
         <ArrowLeft className="w-4 h-4" /> Quay Về Phòng Chờ Đề Thi
       </button>
+
+      {/* Avatar Picker Modal */}
+      {showAvatarModal && (
+        <AvatarPickerModal
+          isOpen={showAvatarModal}
+          currentUser={user}
+          onClose={() => setShowAvatarModal(false)}
+          onSaveAvatar={async (newAvatar) => {
+            if (onUpdateAvatar) {
+              await onUpdateAvatar(newAvatar);
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

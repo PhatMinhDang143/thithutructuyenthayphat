@@ -3,6 +3,7 @@ export interface StudentAccount {
   password?: string;
   name: string;
   group: string; // Lớp/Nhóm (e.g. "12A1", "12A2", "11B1")
+  avatar?: string;
 }
 
 export interface ExamQuestionsConfig {
@@ -87,6 +88,7 @@ export interface ExamSubmission {
   submitted_at: string;
   username: string;
   name: string;
+  avatar?: string; // Avatar của thí sinh
   group: string; // Lớp của học sinh
   examTitle: string;
   score: number;
@@ -94,7 +96,7 @@ export interface ExamSubmission {
   cheat: string; // e.g. "0 lần" or "2 lần"
   details?: StudentAnswers;
   correctAnswers?: AnswerKeys; // Authoritative answer key returned securely after server-side grading
-  timing?: SubmissionTiming; // Secret telemetry: total exam duration and per-question speed (teacher-only)
+  timing?: SubmissionTiming; // Secret telemetry: total exam duration and per-question speed
 }
 
 export interface AppUser {
@@ -102,6 +104,7 @@ export interface AppUser {
   name: string;
   group: string; // Class / Group
   role: 'student' | 'guest' | 'teacher';
+  avatar?: string;
   token?: string;
 }
 

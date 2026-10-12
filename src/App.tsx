@@ -12,7 +12,7 @@ import { StudentsManager } from './components/teacher/StudentsManager';
 import { HistoryViewer } from './components/teacher/HistoryViewer';
 import { QuestionAnalyticsModal } from './components/teacher/QuestionAnalyticsModal';
 
-import { fetchAllData, submitExamResult, submitExamAnswersToServer, getStoredCurrentUser, logoutUser } from './services/storageService';
+import { fetchAllData, submitExamResult, submitExamAnswersToServer, getStoredCurrentUser, logoutUser, updateStudentAvatar } from './services/storageService';
 import { LayoutDashboard, FileSpreadsheet, ShieldCheck, Activity, Power, Component, BarChart2, Menu, X, ChevronRight } from 'lucide-react';
 
 export default function App() {
@@ -37,6 +37,14 @@ export default function App() {
   // Teacher Flow State
   const [teacherSubView, setTeacherSubView] = useState<'dashboard' | 'exams' | 'students' | 'history' | 'analytics'>('dashboard');
   const [teacherMobileMenuOpen, setTeacherMobileMenuOpen] = useState<boolean>(false);
+
+  const handleUpdateAvatar = async (newAvatar: string) => {
+    if (!currentUser) return;
+    const updatedUser = { ...currentUser, avatar: newAvatar };
+    setCurrentUser(updatedUser);
+    await updateStudentAvatar(currentUser.username, newAvatar, updatedUser);
+    await loadData(false);
+  };
 
   const teacherNavItems = [
     { id: 'dashboard' as const, label: 'Trang Tổng Quan', shortLabel: 'Tổng Quan', icon: LayoutDashboard, color: '#FFC93C' },
@@ -122,6 +130,7 @@ export default function App() {
       examTitle: exam.title,
       username: currentUser.username,
       name: currentUser.name,
+      avatar: currentUser.avatar,
       group: currentUser.group,
       studentAnswers,
       cheatCount,
@@ -139,10 +148,17 @@ export default function App() {
       const updatedData = await fetchAllData(currentUser.role);
       setHistory(updatedData.history);
 
-      // Compute leaderboard for this exam
+      // Compute leaderboard for this exam (Score DESC, then Duration ASC)
       const examLeaderboard = updatedData.history
-        .filter((h) => h.examTitle === exam.title)
-        .sort((a, b) => b.score - a.score);
+        .filter((h) => (h.examTitle || '').trim().toLowerCase() === (exam.title || '').trim().toLowerCase() || (h.examId && h.examId === exam.id))
+        .sort((a, b) => {
+          const sB = Number(b.score) || 0;
+          const sA = Number(a.score) || 0;
+          if (sB !== sA) return sB - sA;
+          const tA = a.timing?.totalSeconds || 999999;
+          const tB = b.timing?.totalSeconds || 999999;
+          return tA - tB;
+        });
 
       setLeaderboard(examLeaderboard);
     } else {
@@ -158,11 +174,12 @@ export default function App() {
       const fallbackPayload: ExamSubmission = {
         username: currentUser.username,
         name: currentUser.name,
+        avatar: currentUser.avatar,
         group: currentUser.group,
         examTitle: exam.title,
         score: 0,
         correct: 0,
-        cheat: `${cheatCount} lần`,
+        cheat: cheatCount >= 4 ? `${cheatCount} lần (Bị dừng bài)` : `${cheatCount} lần`,
         submitted_at: new Date().toLocaleString('vi-VN'),
         details: studentAnswers,
         timing,
@@ -182,6 +199,7 @@ export default function App() {
           currentUser={currentUser}
           onLogout={handleLogout}
           onRefreshData={loadData}
+          onUpdateAvatar={handleUpdateAvatar}
         />
       )}
 
@@ -470,6 +488,7 @@ export default function App() {
                 exam={selectedExam}
                 resultData={resultData}
                 leaderboard={leaderboard}
+                onUpdateAvatar={handleUpdateAvatar}
                 onBackToLobby={() => {
                   setSelectedExam(null);
                   setResultData(null);
@@ -484,6 +503,7 @@ export default function App() {
                 history={history || []}
                 loading={loading}
                 onLogout={handleLogout}
+                onUpdateAvatar={handleUpdateAvatar}
                 onSelectExam={(ex) => {
                   setSelectedExam(ex);
                   setStudentSubView('exam');
@@ -492,8 +512,15 @@ export default function App() {
                   setSelectedExam(ex);
                   setResultData(submission);
                   const examLeaderboard = (history || [])
-                    .filter((h) => (h.examTitle || '').trim().toLowerCase() === (ex.title || '').trim().toLowerCase())
-                    .sort((a, b) => b.score - a.score);
+                    .filter((h) => (h.examTitle || '').trim().toLowerCase() === (ex.title || '').trim().toLowerCase() || (h.examId && h.examId === ex.id))
+                    .sort((a, b) => {
+                      const sB = Number(b.score) || 0;
+                      const sA = Number(a.score) || 0;
+                      if (sB !== sA) return sB - sA;
+                      const tA = a.timing?.totalSeconds || 999999;
+                      const tB = b.timing?.totalSeconds || 999999;
+                      return tA - tB;
+                    });
                   setLeaderboard(examLeaderboard);
                   setStudentSubView('result');
                 }}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { AppUser, ExamItem, StudentAnswers, SubmissionTiming, QuestionTimingRecord } from '../../types';
 import { 
   Clock, Minimize2, Maximize2, User, Flag, Check, Edit3, X, 
-  AlertTriangle, Send, FileText, AlertCircle, Eye, Bookmark, Settings, Palette
+  AlertTriangle, Send, FileText, AlertCircle, Eye, Bookmark, Settings, Palette, ShieldCheck
 } from 'lucide-react';
 import { PdfViewer } from '../common/PdfViewer';
 import { useTheme } from '../../context/ThemeContext';
@@ -153,6 +153,20 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     if (draft) {
       try {
         const parsed = JSON.parse(draft);
+        if (Number(parsed.cheatCount) >= 4) {
+          localStorage.removeItem(storageKey);
+          if (parsed.ansPart1) setAnsPart1(parsed.ansPart1);
+          if (parsed.ansPart2) setAnsPart2(parsed.ansPart2);
+          if (parsed.ansPart3) setAnsPart3(parsed.ansPart3);
+          setCheatCount(4);
+          cheatTerminatedRef.current = true;
+          setCheatTerminated(true);
+          setTimeout(() => {
+            handleSubmitRef.current(true, true);
+          }, 300);
+          return;
+        }
+
         if (window.confirm('Phát hiện bản nháp bài làm trước đó. Bạn có muốn khôi phục không?')) {
           if (parsed.ansPart1) setAnsPart1(parsed.ansPart1);
           if (parsed.ansPart2) setAnsPart2(parsed.ansPart2);
@@ -184,16 +198,37 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     localStorage.setItem(storageKey, JSON.stringify(draftData));
   }, [ansPart1, ansPart2, ansPart3, flaggedQuestions, timeLeft, cheatCount]);
 
-  // Anti-cheat Visibility Tracking
+  // Anti-cheat Visibility Tracking: silent tracking, stop immediately at 4 screen exits
+  const [cheatTerminated, setCheatTerminated] = useState<boolean>(false);
+  const cheatTerminatedRef = useRef<boolean>(false);
+
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.hidden) setCheatCount((prev) => prev + 1);
+      if (document.hidden) {
+        if (cheatTerminatedRef.current || isSubmittedRef.current) return;
+        setCheatCount((prev) => {
+          const nextCount = prev + 1;
+          latestDataRef.current.cheatCount = nextCount;
+          if (nextCount >= 4) {
+            cheatTerminatedRef.current = true;
+            setCheatTerminated(true);
+            if (timerRef.current) clearInterval(timerRef.current);
+            // Immediately stop exam and auto-submit
+            setTimeout(() => {
+              handleSubmitRef.current(true, true);
+            }, 600);
+          }
+          return nextCount;
+        });
+      }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
-  const handleSubmit = (isAuto = false) => {
+  const handleSubmit = (isAuto = false, isCheatTerminated = false) => {
     if (isSubmittedRef.current) return;
     if (!isAuto && !window.confirm('Bạn có chắc chắn muốn nộp bài làm ngay?')) return;
     
@@ -204,6 +239,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     } catch (e) {}
 
     const latest = latestDataRef.current;
+    const finalCheatCount = isCheatTerminated ? Math.max(4, latest.cheatCount) : latest.cheatCount;
     const studentAnswers: StudentAnswers = {
       p1: latest.ansPart1,
       p2: latest.ansPart2,
@@ -254,7 +290,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
       questionTimings: questionTimingsRef.current,
     };
 
-    onExamSubmit(studentAnswers, latest.cheatCount, latest.exam, timingData);
+    onExamSubmit(studentAnswers, finalCheatCount, latest.exam, timingData);
   };
 
   const handleSubmitRef = useRef(handleSubmit);
@@ -297,6 +333,43 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
 
   return (
     <div className={`h-[100dvh] w-full flex flex-col bg-[#FDF6E9] text-[#111111] overflow-hidden ${isFocusMode ? 'focus-active' : ''}`}>
+      {/* Fullscreen Overlay when stopped due to 4 screen exits */}
+      {cheatTerminated && (
+        <div className="fixed inset-0 z-[9999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white border-4 border-[#111111] shadow-[8px_8px_0px_#E63946] max-w-lg w-full p-6 sm:p-8 text-center animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 bg-[#FFF0F0] border-3 border-[#E63946] rounded-full mx-auto flex items-center justify-center text-[#E63946] mb-4 shadow-[3px_3px_0px_#111111]">
+              <AlertTriangle className="w-8 h-8" />
+            </div>
+            
+            <span className="inline-block px-3 py-1 bg-[#E63946] text-white border-2 border-[#111111] text-xs font-black uppercase tracking-wider mb-2">
+              Đình Chỉ Bài Thi Do Vi Phạm
+            </span>
+
+            <h2 className="text-xl sm:text-2xl font-black uppercase text-[#111111] mb-3">
+              BÀI THI ĐÃ BỊ DỪNG NGAY LẬP TỨC!
+            </h2>
+
+            <div className="bg-[#FFF0F0] border-2 border-[#E63946] p-4 text-left text-xs sm:text-sm text-[#111111] mb-5 space-y-2">
+              <p className="font-black text-[#E63946] flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                Bạn đã rời khỏi màn hình làm bài 4 lần (vượt quá giới hạn cho phép).
+              </p>
+              <p className="font-medium text-neutral-800">
+                Theo quy chế phòng thi, bài thi của bạn đã <strong>lập tức bị dừng</strong> và hệ thống tự động thu bài làm hiện tại để gửi về máy chủ chấm điểm.
+              </p>
+              <p className="text-[11px] text-neutral-600 font-bold">
+                * Toàn bộ câu trả lời bạn đã chọn trước thời điểm dừng bài đều được bảo lưu.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-center gap-2 text-xs font-black text-[#111111] bg-[#FDF6E9] py-2.5 px-4 border-2 border-[#111111]">
+              <span className="w-3 h-3 rounded-full bg-[#E63946] animate-ping" />
+              <span>Đang khóa bài thi và chuyển sang trang kết quả...</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Bar - Neo-Brutalist High Contrast Header */}
       <header className="h-14 bg-white border-b-2 border-[#111111] flex items-center justify-between px-3 md:px-6 shrink-0 z-40 shadow-[0_2px_0px_#111111]">
         <div className="flex items-center gap-2 md:gap-4 min-w-0">
@@ -315,13 +388,15 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
         </div>
 
         {/* Timer */}
-        <div className={`flex flex-col items-center justify-center border-2 border-[#111111] px-3 md:px-4 py-1 min-w-[110px] md:min-w-[130px] shadow-[3px_3px_0px_#111111] ${
-          isDanger ? 'timer-danger' : 'bg-white'
-        }`}>
-          <p className="text-[9px] uppercase tracking-widest font-black text-neutral-600">Thời Gian</p>
-          <p className="text-sm md:text-base font-black font-mono tracking-tight flex items-center gap-1.5 text-[#111111]">
-            <Clock className="w-4 h-4" /> {minutes}:{seconds}
-          </p>
+        <div className="flex items-center gap-2">
+          <div className={`flex flex-col items-center justify-center border-2 border-[#111111] px-3 md:px-4 py-1 min-w-[95px] md:min-w-[120px] shadow-[3px_3px_0px_#111111] ${
+            isDanger ? 'timer-danger' : 'bg-white'
+          }`}>
+            <p className="text-[9px] uppercase tracking-widest font-black text-neutral-600">Thời Gian</p>
+            <p className="text-sm md:text-base font-black font-mono tracking-tight flex items-center gap-1.5 text-[#111111]">
+              <Clock className="w-4 h-4" /> {minutes}:{seconds}
+            </p>
+          </div>
         </div>
 
         {/* Student Info & Mobile Sheet Toggle & Appearance Modal */}
