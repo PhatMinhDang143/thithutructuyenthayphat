@@ -1162,6 +1162,16 @@ app.post('/api/student/avatar', async (req, res) => {
       });
     });
 
+    if (GAS_API_URL) {
+      try {
+        fetch(`${GAS_API_URL}?action=save_avatar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'save_avatar', username: cleanUser, avatar }),
+        }).catch((e) => console.warn('[GAS] sync avatar warning:', e));
+      } catch (e) {}
+    }
+
     console.log(`[AVATAR] Updated avatar for student ${cleanUser}`);
     res.json({ success: true, avatar, message: 'Đã cập nhật ảnh đại diện thành công!' });
   } catch (err: any) {

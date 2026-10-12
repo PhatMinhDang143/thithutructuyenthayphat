@@ -162,14 +162,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </form>
           ) : (
             <div className="space-y-3">
+              <div className="bg-[#EBF3FE] border-2 border-[#111111] p-3 text-xs space-y-1.5 shadow-[2px_2px_0px_#111111]">
+                <p className="font-black text-[#111111] flex items-center gap-1.5">
+                  <span className="w-2 h-2 bg-[#0F9D58] inline-block"></span>
+                  Mã Code.gs mới nhất: Tự động lưu Avatar học sinh vào Google Drive & Đồng bộ điện thoại/máy tính
+                </p>
+                <p className="text-neutral-700 leading-relaxed">
+                  • <strong>Google Drive:</strong> Tự động tạo thư mục <code className="bg-white px-1 py-0.5 border border-[#111111] text-[11px] font-mono">HocSinh_Avatars_Drive</code> lưu trữ ảnh tải lên và sinh link tốc độ cao vào Google Sheet.
+                </p>
+                <p className="text-neutral-700 leading-relaxed">
+                  • <strong>Cách cập nhật:</strong> Dán mã vào file <code className="bg-white px-1 py-0.5 border border-[#111111] text-[11px] font-mono">Code.gs</code> &gt; Chọn hàm <code className="bg-white px-1 py-0.5 border border-[#111111] text-[11px] font-mono">testAuthorizeDrive</code> rồi bấm <strong>Chạy (Run)</strong> để cấp quyền Drive &gt; Bấm <strong>Triển khai (Deploy)</strong> &gt; Chọn <strong>Phiên bản Mới</strong>.
+                </p>
+              </div>
+
               <div className="flex items-center justify-between">
-                <p className="text-xs text-neutral-700 font-medium">
-                  Mã Code.gs dùng cho Google Sheets (Tiện ích mở rộng &gt; Apps Script &gt; Dán mã &gt; Triển khai Web App):
+                <p className="text-xs text-neutral-700 font-bold">
+                  Mã nguồn Code.gs (Google Apps Script):
                 </p>
                 <button
                   type="button"
                   onClick={handleCopyScript}
-                  className="px-3 py-1.5 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] text-xs font-black flex items-center gap-1.5 shrink-0 shadow-[2px_2px_0px_#111111]"
+                  className="px-3 py-1.5 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] text-xs font-black flex items-center gap-1.5 shrink-0 shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px]"
                 >
                   {copiedScript ? <Check className="w-3.5 h-3.5 text-[#0F9D58]" /> : <Copy className="w-3.5 h-3.5" />}
                   {copiedScript ? 'Đã sao chép!' : 'Sao chép mã'}

@@ -64,6 +64,18 @@ export default function App() {
       setStudents(data.students);
       setHistory(data.history);
       setClasses(data.classes);
+
+      // Auto-synchronize currentUser avatar from Google Sheets (critical for phones/other devices)
+      if (currentUser && (currentUser.role === 'student' || currentUser.role === 'guest')) {
+        const myLatest = data.students[currentUser.username.toLowerCase()] || data.students[currentUser.username];
+        if (myLatest && myLatest.avatar && myLatest.avatar !== currentUser.avatar) {
+          const updatedUser = { ...currentUser, avatar: myLatest.avatar };
+          setCurrentUser(updatedUser);
+          try {
+            localStorage.setItem('app_current_user', JSON.stringify(updatedUser));
+          } catch (e) {}
+        }
+      }
     } catch (e) {
       console.warn('Sync error:', e);
     } finally {

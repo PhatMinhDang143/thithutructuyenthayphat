@@ -279,34 +279,53 @@ export function extractInitials(name: string): string {
 }
 
 /**
- * Compresses an image client-side to a lightweight square data URL (max 256x256)
+ * Compresses an image client-side to a lightweight square data URL (max 100x100)
+ * strictly under 25,000 characters to fit safely within Google Sheet cell limits (50,000 chars).
  */
-export async function compressImageFile(file: File, maxDim = 256, quality = 0.82): Promise<string> {
+export async function compressImageFile(file: File, maxDim = 100, quality = 0.70): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const minSide = Math.min(img.width, img.height);
-        const sx = (img.width - minSide) / 2;
-        const sy = (img.height - minSide) / 2;
+        try {
+          const minSide = Math.min(img.width, img.height);
+          const sx = (img.width - minSide) / 2;
+          const sy = (img.height - minSide) / 2;
 
-        const targetDim = Math.min(maxDim, minSide);
-        canvas.width = targetDim;
-        canvas.height = targetDim;
+          let targetDim = Math.min(maxDim, minSide);
+          let currentQuality = quality;
 
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Canvas context not available'));
-          return;
+          const render = (dim: number, q: number): string => {
+            const canvas = document.createElement('canvas');
+            canvas.width = dim;
+            canvas.height = dim;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('Canvas context not available');
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, dim, dim);
+            return canvas.toDataURL('image/jpeg', q);
+          };
+
+          let dataUrl = render(targetDim, currentQuality);
+
+          // Google Sheet cell hard limit is 50,000 characters.
+          // Keep strictly under 22,000 chars for safety and fast mobile network transfers.
+          if (dataUrl.length > 22000) {
+            targetDim = 84;
+            currentQuality = 0.55;
+            dataUrl = render(targetDim, currentQuality);
+          }
+          if (dataUrl.length > 22000) {
+            targetDim = 68;
+            currentQuality = 0.45;
+            dataUrl = render(targetDim, currentQuality);
+          }
+
+          resolve(dataUrl);
+        } catch (err: any) {
+          reject(err || new Error('Khong the xu ly anh'));
         }
-
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, targetDim, targetDim);
-
-        const dataUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve(dataUrl);
       };
       img.onerror = () => reject(new Error('Khong the doc file anh'));
       img.src = e.target?.result as string;

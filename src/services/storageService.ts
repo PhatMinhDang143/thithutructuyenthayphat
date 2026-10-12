@@ -402,6 +402,7 @@ function normalizeAccents(str: string): string {
           username: foundStudent.username || cleanUsername,
           name: foundStudent.name || cleanUsername,
           group: foundStudent.group || foundStudent.className || 'Chưa phân lớp',
+          avatar: foundStudent.avatar || undefined,
           role: 'student',
         };
         safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(studentObj));
@@ -856,6 +857,19 @@ export const fetchAllData = async (
     }
   });
   safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(mergedStudents));
+
+  // Sync latest avatar to current logged-in user in localStorage
+  try {
+    const storedUser = getStoredCurrentUser();
+    if (storedUser && (storedUser.role === 'student' || storedUser.role === 'guest')) {
+      const myKey = String(storedUser.username || '').toLowerCase().trim();
+      const myLatest = mergedStudents[myKey];
+      if (myLatest && myLatest.avatar && myLatest.avatar !== storedUser.avatar) {
+        storedUser.avatar = myLatest.avatar;
+        safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(storedUser));
+      }
+    }
+  } catch (e) {}
 
   // === SMART CONSOLIDATION OF HISTORY ===
   let localHistory: ExamSubmission[] = [];
@@ -1397,24 +1411,53 @@ export const updateStudentAvatar = async (
     });
   } catch (e) {}
 
-  // 4b. Forward to Google Apps Script (cho trường hợp chạy thuần Google Sheet không máy chủ)
+  let finalAvatar = avatar;
+
+  // 4b. Forward to Google Apps Script (tự động tải ảnh lên Google Drive và lưu link vào Google Sheet)
   const apiUrl = getApiUrl();
   if (apiUrl) {
     try {
-      fetch(`${apiUrl}?action=save_avatar`, {
+      const gasRes = await fetch(`${apiUrl}?action=save_avatar`, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ username, avatar }),
-      }).catch((gasErr) => console.warn('GAS save_avatar warning:', gasErr));
-    } catch (e) {}
+        body: JSON.stringify({ action: 'save_avatar', username, avatar }),
+      });
+      if (gasRes.ok) {
+        const gasData = await gasRes.json();
+        if (gasData && gasData.success && gasData.avatar) {
+          finalAvatar = gasData.avatar;
+          // Re-update currentUser and localStorage with permanent Google Drive CDN URL
+          if (currentUser) {
+            safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify({ ...currentUser, avatar: finalAvatar }));
+          } else {
+            const stored = getStoredCurrentUser();
+            if (stored) {
+              stored.avatar = finalAvatar;
+              safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(stored));
+            }
+          }
+          const rawStudents = localStorage.getItem(STORAGE_KEYS.STUDENTS);
+          if (rawStudents) {
+            const students = JSON.parse(rawStudents);
+            const cleanUser = username.trim();
+            const lower = cleanUser.toLowerCase();
+            if (students[cleanUser]) students[cleanUser].avatar = finalAvatar;
+            else if (students[lower]) students[lower].avatar = finalAvatar;
+            safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(students));
+          }
+        }
+      }
+    } catch (gasErr) {
+      console.warn('GAS save_avatar warning:', gasErr);
+    }
   }
 
   // 5. Trigger cross-component sync event
   try {
-    window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'avatar', username, avatar } }));
+    window.dispatchEvent(new CustomEvent('app_data_updated', { detail: { type: 'avatar', username, avatar: finalAvatar } }));
   } catch (e) {}
 
-  return { success: true, avatar };
+  return { success: true, avatar: finalAvatar };
 };
 
 // ================= CLEAR HISTORY =================
@@ -1488,11 +1531,16 @@ export const deleteHistoryEntries = async (ids: string[] | string): Promise<{ su
 
 // Full Google Apps Script Code.gs Template for Teachers
 export const GOOGLE_APPS_SCRIPT_CODE = `/**
- * GOOGLE APPS SCRIPT CHO HỆ THỐNG THI TRỰC TUYẾN (HỖ TRỢ LƯU FILE GOOGLE DRIVE & ĐỒNG BỘ ĐỀ THI)
- * Hướng dẫn cài đặt / Cập nhật:
+ * GOOGLE APPS SCRIPT CHO HỆ THỐNG THI TRỰC TUYẾN
+ * HỖ TRỢ:
+ * - TỰ ĐỘNG LƯU ẢNH AVATAR HỌC SINH LÊN GOOGLE DRIVE (ĐỒNG BỘ 100% CẢ ĐIỆN THOẠI & MÁY TÍNH)
+ * - LƯU FILE ĐỀ THI PDF LÊN GOOGLE DRIVE
+ * - ĐỒNG BỘ DANH SÁCH HỌC SINH, ĐỀ THI, KẾT QUẢ VÀO GOOGLE SHEET
+ * 
+ * HƯỚNG DẪN CÀI ĐẶT / CẬP NHẬT:
  * 1. Mở Google Sheet -> Chọn Tiện ích mở rộng (Extensions) -> Apps Script
  * 2. Xóa toàn bộ mã cũ và dán toàn bộ đoạn mã này vào file Code.gs.
- * 3. [QUAN TRỌNG ĐỂ CẤP QUYỀN DRIVE]:
+ * 3. [QUAN TRỌNG ĐỂ CẤP QUYỀN GOOGLE DRIVE]:
  *    - Ở thanh công cụ trên cùng của Apps Script, chọn hàm "testAuthorizeDrive" và bấm nút "Chạy" (Run ▶️).
  *    - Google sẽ hiện popup "Cần có sự ủy quyền" -> Bấm "Xem lại quyền" -> Chọn tài khoản của bạn -> Bấm "Nâng cao" (Advanced) -> "Đi tới Dự án (không an toàn)" -> "Cho phép" (Allow).
  * 4. Bấm "Triển khai" (Deploy) -> "Quản lý tùy chọn triển khai" (Manage deployments)
@@ -1500,10 +1548,13 @@ export const GOOGLE_APPS_SCRIPT_CODE = `/**
  */
 
 function testAuthorizeDrive() {
-  var folderName = 'DeThi_Online_Drive';
-  var folders = DriveApp.getFoldersByName(folderName);
-  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
-  Logger.log('Đã cấp quyền Google Drive thành công! Thư mục: ' + folder.getName());
+  var folder1 = DriveApp.getFoldersByName('DeThi_Online_Drive');
+  var f1 = folder1.hasNext() ? folder1.next() : DriveApp.createFolder('DeThi_Online_Drive');
+  
+  var folder2 = DriveApp.getFoldersByName('HocSinh_Avatars_Drive');
+  var f2 = folder2.hasNext() ? folder2.next() : DriveApp.createFolder('HocSinh_Avatars_Drive');
+  
+  Logger.log('Đã cấp quyền Google Drive thành công! Thư mục đề thi: ' + f1.getName() + ' | Thư mục avatar: ' + f2.getName());
 }
 
 function doGet(e) {
@@ -1574,10 +1625,15 @@ function doPost(e) {
       return createJsonResponse({ success: true, message: 'Đã xóa nhật ký thi' });
     }
     
-    // 7. CẬP NHẬT AVATAR HỌC SINH
+    // 7. CẬP NHẬT AVATAR HỌC SINH (TỰ ĐỘNG LƯU VÀO GOOGLE DRIVE & LƯU LINK VÀO GOOGLE SHEET)
     if (action === 'save_avatar' || action === 'update_avatar') {
-      updateStudentAvatarInSheet(ss, postData.username, postData.avatar);
-      return createJsonResponse({ success: true, message: 'Đã cập nhật avatar vào Google Sheet' });
+      var driveAvatarUrl = saveAvatarToDrive(postData.username, postData.avatar);
+      updateStudentAvatarInSheet(ss, postData.username, driveAvatarUrl);
+      return createJsonResponse({ 
+        success: true, 
+        avatar: driveAvatarUrl, 
+        message: 'Đã lưu avatar lên Google Drive và cập nhật vào Google Sheet thành công!' 
+      });
     }
     
     return createJsonResponse({ success: false, error: 'Hành động POST không hợp lệ: ' + action });
@@ -1635,6 +1691,46 @@ function uploadFileToDrive(postData) {
     };
   } catch (err) {
     return { success: false, error: 'Lỗi tải lên Google Drive: ' + err.toString() };
+  }
+}
+
+function saveAvatarToDrive(username, avatarData) {
+  try {
+    var raw = avatarData ? String(avatarData) : '';
+    if (!raw) return '';
+    
+    // Nếu là ảnh upload dạng Base64 (data:image/... hoặc raw base64)
+    if (raw.indexOf('data:image/') === 0 || raw.indexOf(';base64,') > -1) {
+      var contentType = 'image/jpeg';
+      var base64Content = raw;
+      if (raw.indexOf(';base64,') > -1) {
+        var parts = raw.split(';base64,');
+        contentType = parts[0].replace('data:', '') || 'image/jpeg';
+        base64Content = parts[1];
+      }
+      var decoded = Utilities.base64Decode(base64Content);
+      var ext = contentType.indexOf('png') > -1 ? '.png' : '.jpg';
+      var fileName = 'Avatar_' + (username || 'hocsinh') + '_' + new Date().getTime() + ext;
+      var blob = Utilities.newBlob(decoded, contentType, fileName);
+      
+      var folderName = 'HocSinh_Avatars_Drive';
+      var folders = DriveApp.getFoldersByName(folderName);
+      var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+      
+      var file = folder.createFile(blob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      
+      var fileId = file.getId();
+      // Link CDN Googleusercontent trực tiếp: tốc độ tải nhanh, không chặn cookie, hiển thị mượt trên cả điện thoại & máy tính
+      return 'https://lh3.googleusercontent.com/d/' + fileId;
+    }
+    
+    // Nếu là preset có sẵn (như scholar, fox, cat...) hoặc link sẵn có thì giữ nguyên
+    return raw;
+  } catch (err) {
+    Logger.log('Lưu avatar vào Drive lỗi (hoặc chưa cấp quyền testAuthorizeDrive): ' + err.toString());
+    // Fallback: cắt ngắn nếu quá dài để không lỗi ô tính Google Sheets (giới hạn 50,000 ký tự)
+    return (avatarData && avatarData.length > 45000) ? avatarData.substring(0, 45000) : avatarData;
   }
 }
 
@@ -1883,18 +1979,25 @@ function saveStudentsToSheet(ss, studentsObj) {
 
 function updateStudentAvatarInSheet(ss, username, avatar) {
   if (!username) return;
+  var safeAvatar = avatar ? String(avatar) : '';
+  if (safeAvatar.length > 48000) {
+    safeAvatar = safeAvatar.substring(0, 48000);
+  }
   var sheet = getStudentSheet(ss);
   var rows = sheet.getDataRange().getValues();
   if (rows.length === 0) return;
 
   var headerRow = rows[0] || [];
   var colUser = -1;
+  var colName = -1;
   var colAvatar = -1;
 
   for (var c = 0; c < headerRow.length; c++) {
     var h = String(headerRow[c] || '').toLowerCase().trim();
     if (colUser === -1 && (h.indexOf('sbd') > -1 || h.indexOf('user') > -1 || h.indexOf('tài khoản') > -1 || h.indexOf('tai khoan') > -1 || h.indexOf('mã') > -1 || h === 'id')) {
       colUser = c;
+    } else if (colName === -1 && (h.indexOf('tên') > -1 || h.indexOf('name') > -1 || h.indexOf('họ') > -1 || h.indexOf('sinh') > -1 || h.indexOf('fullname') > -1)) {
+      colName = c;
     } else if (colAvatar === -1 && (h.indexOf('avatar') > -1 || h.indexOf('ảnh') > -1 || h.indexOf('anh') > -1 || h.indexOf('hình') > -1)) {
       colAvatar = c;
     }
@@ -1909,12 +2012,28 @@ function updateStudentAvatarInSheet(ss, username, avatar) {
   }
 
   var targetUser = String(username).toLowerCase().trim();
+  var found = false;
   for (var i = 1; i < rows.length; i++) {
     var u = String(rows[i][colUser] || '').toLowerCase().trim();
-    if (u === targetUser) {
-      sheet.getRange(i + 1, colAvatar + 1).setValue(avatar || '');
+    var n = colName > -1 ? String(rows[i][colName] || '').toLowerCase().trim() : '';
+    if (u === targetUser || (n && n === targetUser)) {
+      sheet.getRange(i + 1, colAvatar + 1).setValue(safeAvatar);
+      found = true;
       break;
     }
+  }
+
+  // Nếu học sinh chưa có trong danh sách, tự động tạo dòng mới để lưu trữ avatar
+  if (!found) {
+    var maxCols = Math.max(headerRow.length, colAvatar + 1);
+    var newRow = [];
+    for (var colIdx = 0; colIdx < maxCols; colIdx++) {
+      if (colIdx === colUser) newRow.push(username);
+      else if (colIdx === colName) newRow.push(username);
+      else if (colIdx === colAvatar) newRow.push(safeAvatar);
+      else newRow.push('');
+    }
+    sheet.appendRow(newRow);
   }
 }
 
@@ -1932,6 +2051,11 @@ function getHistoryData(ss) {
       if (ex && ex.title) examsMap[ex.title.trim()] = ex;
       if (ex && ex.id) examsMap[ex.id.trim()] = ex;
     }
+  } catch(e) {}
+
+  var studentsMap = {};
+  try {
+    studentsMap = getStudentsData(ss);
   } catch(e) {}
 
   var history = [];
@@ -2016,12 +2140,16 @@ function getHistoryData(ss) {
       }
     }
 
+    var stuInfo = (username && studentsMap[username.toLowerCase()]) ? studentsMap[username.toLowerCase()] : {};
+    var avatar = stuInfo.avatar || undefined;
+
     history.push({
       id: id,
       submitted_at: submitted_at,
       username: username,
       name: name,
       group: group,
+      avatar: avatar,
       examTitle: examTitle,
       score: score,
       correct: correct,

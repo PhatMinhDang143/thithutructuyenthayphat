@@ -61,7 +61,7 @@ export const ExamLeaderboard: React.FC<ExamLeaderboardProps> = ({
   const allSortedSubmissions = useMemo(() => {
     let localStudents: Record<string, any> = {};
     try {
-      const raw = localStorage.getItem('dethi_students');
+      const raw = localStorage.getItem('app_students_data') || localStorage.getItem('dethi_students');
       if (raw) localStudents = JSON.parse(raw);
     } catch (e) {}
 

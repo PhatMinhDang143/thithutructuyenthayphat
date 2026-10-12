@@ -43,7 +43,7 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
     setIsUploading(true);
 
     try {
-      const dataUrl = await compressImageFile(file, 256, 0.85);
+      const dataUrl = await compressImageFile(file, 100, 0.70);
       setSelectedAvatar(dataUrl);
     } catch (err: any) {
       setUploadError('Không thể xử lý ảnh: ' + (err?.message || 'Lỗi không xác định'));
@@ -143,7 +143,7 @@ export const AvatarPickerModal: React.FC<AvatarPickerModalProps> = ({
               </button>
 
               <span className="text-xs text-neutral-600 font-medium">
-                Tự động cắt vuông và nén nhẹ để tải cực nhanh.
+                Tự động tối ưu và đồng bộ qua Google Drive & Google Sheet.
               </span>
             </div>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getAvatarPreset, getInitialsColor, extractInitials } from '../../utils/avatarUtils';
 
 interface UserAvatarProps {
@@ -19,6 +19,10 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
   rankBadge,
 }) => {
   const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [avatar]);
 
   const sizeClasses = {
     xs: 'w-6 h-6 text-[10px]',
@@ -49,6 +53,7 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
           <img
             src={avatar}
             alt={name}
+            referrerPolicy="no-referrer"
             onError={() => setImgError(true)}
             className="w-full h-full object-cover"
           />
