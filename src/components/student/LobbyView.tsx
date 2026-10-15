@@ -7,6 +7,11 @@ import {
 import { UserAvatar } from '../common/UserAvatar';
 import { AvatarPickerModal } from '../common/AvatarPickerModal';
 import { ExamLeaderboard } from './ExamLeaderboard';
+import { 
+  isExamAllowedForStudent, 
+  getExamGradeBadge, 
+  extractGradeFromClass 
+} from '../../utils/gradeUtils';
 
 interface LobbyViewProps {
   user: AppUser;
@@ -43,23 +48,15 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     return now >= start && now <= end;
   };
 
-  // Strictly filter exams based on student's assigned class group
-  const isExamAllowed = (cfg: ExamQuestionsConfig, userGroup: string): boolean => {
-    if (!cfg || !cfg.target_group || cfg.target_group.trim() === '') return true;
-    const target = String(cfg.target_group).toLowerCase();
-    if (target.includes('tất cả') || target.includes('all')) return true;
-
-    const groupStr = String(userGroup || 'Khách').toLowerCase().trim();
-    if (!groupStr || groupStr === 'khách' || groupStr === 'guest') {
-      return false;
-    }
-
-    const allowedClasses = String(cfg.target_group).split(',').map((c) => c.trim().toLowerCase());
-    return allowedClasses.includes(groupStr) || target.includes(groupStr);
-  };
-
   const safeExams = Array.isArray(exams) ? exams : [];
-  const visibleExams = safeExams.filter((ex) => ex && isExamAllowed(ex.questions || {}, user?.group || 'Khách'));
+
+  // Lọc thông minh theo Khối lớp (Khối 10, Khối 11, Khối 12) và nhóm lớp chỉ định
+  // Triệt tiêu 100% lỗi đề Khối 11 hiện trong tài khoản học sinh Khối 12
+  const visibleExams = useMemo(() => {
+    return safeExams.filter((ex) => ex && isExamAllowedForStudent(ex, user?.group || 'Khách'));
+  }, [safeExams, user?.group]);
+
+  const userGrade = extractGradeFromClass(user?.group);
 
   // Filter student's own submissions from history
   const userIdentifier = String(user.username || user.name || '').trim().toLowerCase();
@@ -157,8 +154,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
       seen.add((ex.title || '').trim().toLowerCase());
     });
 
-    // 2. From submissions history
-    (history || []).forEach((h) => {
+    // 2. From student's own submissions history
+    (mySubmissions || []).forEach((h) => {
       const norm = (h.examTitle || '').trim().toLowerCase();
       if (!seen.has(norm)) {
         seen.add(norm);
@@ -172,7 +169,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
     });
 
     return list;
-  }, [visibleExams, history]);
+  }, [visibleExams, history, mySubmissions]);
 
   // Active exam for the Leaderboard Tab
   const activeLeaderboardExam = useMemo(() => {
@@ -236,7 +233,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="font-black px-2 py-0.5 bg-[#4D6BFE] text-white border border-[#111111] uppercase tracking-wide">
-                    Lớp {user.group || 'Khách'}
+                    {userGrade ? `Khối ${userGrade} • Lớp ${user.group}` : `Lớp ${user.group || 'Khách'}`}
                   </span>
                   <span className="font-mono text-neutral-600 font-bold">
                     SBD: {user.username}
@@ -385,11 +382,16 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                     <div>
                       {/* Top Metadata Strip */}
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 text-xs">
-                        <span className="bg-[#FDF6E9] text-[#111111] px-2.5 py-0.5 text-[11px] font-black border-2 border-[#111111]">
-                          {cfg.exam_type === 'custom'
-                            ? `Tùy biến (${cfg.num_p1 || 0}-${cfg.num_p2 || 0}-${cfg.num_p3 || 0})`
-                            : `Chuẩn (${cfg.num_p1 || 12}-${cfg.num_p2 || 4}-${cfg.num_p3 || 6})`}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`px-2 py-0.5 text-[11px] font-black border-2 border-[#111111] shadow-[1px_1px_0px_#111111] ${getExamGradeBadge(exam).color}`}>
+                            {getExamGradeBadge(exam).label}
+                          </span>
+                          <span className="bg-[#FDF6E9] text-[#111111] px-2 py-0.5 text-[11px] font-black border-2 border-[#111111]">
+                            {cfg.exam_type === 'custom'
+                              ? `Tùy biến (${cfg.num_p1 || 0}-${cfg.num_p2 || 0}-${cfg.num_p3 || 0})`
+                              : `Chuẩn (${cfg.num_p1 || 12}-${cfg.num_p2 || 4}-${cfg.num_p3 || 6})`}
+                          </span>
+                        </div>
 
                         <span className="font-mono text-neutral-600 font-bold">
                           {exam.duration} phút
@@ -406,7 +408,11 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                         <div className="flex items-center justify-between">
                           <span className="text-neutral-600 font-medium">Đối tượng:</span>
                           <span className="font-black text-[#111111] uppercase">
-                            {cfg.target_group || 'Tất cả các lớp'}
+                            {cfg.target_group && cfg.target_group.trim() !== '' && cfg.target_group.toLowerCase() !== 'tất cả'
+                              ? cfg.target_group
+                              : getExamGradeBadge(exam).grade
+                              ? `Toàn Khối ${getExamGradeBadge(exam).grade}`
+                              : 'Tất cả các lớp'}
                           </span>
                         </div>
 

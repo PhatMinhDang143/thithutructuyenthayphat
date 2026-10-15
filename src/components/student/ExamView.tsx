@@ -31,14 +31,31 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
   const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(window.innerWidth > 768);
 
 
-  // Draggable Floating Button on Mobile
-  const [btnPos, setBtnPos] = useState({ x: window.innerWidth - 175, y: window.innerHeight - 85 });
-  const btnDrag = useRef({ isDragging: false, startX: 0, startY: 0, initialX: 0, initialY: 0, hasMoved: false });
+  // Draggable Floating Button on Mobile (GPU-accelerated via Direct DOM Ref - Zero React Re-renders)
+  const floatingBtnRef = useRef<HTMLDivElement | null>(null);
+  const btnDrag = useRef({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    initialX: typeof window !== 'undefined' ? window.innerWidth - 175 : 180,
+    initialY: typeof window !== 'undefined' ? window.innerHeight - 85 : 500,
+    currentX: typeof window !== 'undefined' ? window.innerWidth - 175 : 180,
+    currentY: typeof window !== 'undefined' ? window.innerHeight - 85 : 500,
+    hasMoved: false,
+  });
 
   useEffect(() => {
-    const updatePos = () => setBtnPos({ x: window.innerWidth - 175, y: window.innerHeight - 85 });
-    window.addEventListener('resize', updatePos);
-    return () => window.removeEventListener('resize', updatePos);
+    const updatePosOnResize = () => {
+      const clampedX = Math.max(8, Math.min(btnDrag.current.currentX, window.innerWidth - 165));
+      const clampedY = Math.max(60, Math.min(btnDrag.current.currentY, window.innerHeight - 60));
+      btnDrag.current.currentX = clampedX;
+      btnDrag.current.currentY = clampedY;
+      if (floatingBtnRef.current) {
+        floatingBtnRef.current.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
+      }
+    };
+    window.addEventListener('resize', updatePosOnResize);
+    return () => window.removeEventListener('resize', updatePosOnResize);
   }, []);
 
   const onBtnDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -46,25 +63,38 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     btnDrag.current.hasMoved = false;
     btnDrag.current.startX = e.clientX;
     btnDrag.current.startY = e.clientY;
-    btnDrag.current.initialX = btnPos.x;
-    btnDrag.current.initialY = btnPos.y;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    btnDrag.current.initialX = btnDrag.current.currentX;
+    btnDrag.current.initialY = btnDrag.current.currentY;
+    e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const onBtnMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!btnDrag.current.isDragging) return;
     const dx = e.clientX - btnDrag.current.startX;
     const dy = e.clientY - btnDrag.current.startY;
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) btnDrag.current.hasMoved = true;
-    let newX = Math.max(0, Math.min(btnDrag.current.initialX + dx, window.innerWidth - 165));
-    let newY = Math.max(60, Math.min(btnDrag.current.initialY + dy, window.innerHeight - 60));
-    setBtnPos({ x: newX, y: newY });
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      btnDrag.current.hasMoved = true;
+    }
+    const newX = Math.max(8, Math.min(btnDrag.current.initialX + dx, window.innerWidth - 165));
+    const newY = Math.max(60, Math.min(btnDrag.current.initialY + dy, window.innerHeight - 60));
+    btnDrag.current.currentX = newX;
+    btnDrag.current.currentY = newY;
+
+    // Cập nhật tọa độ trực tiếp qua GPU mà không gọi setState
+    if (floatingBtnRef.current) {
+      floatingBtnRef.current.style.transform = `translate3d(${newX}px, ${newY}px, 0)`;
+    }
   };
 
   const onBtnUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!btnDrag.current.isDragging) return;
     btnDrag.current.isDragging = false;
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    if (!btnDrag.current.hasMoved) setIsMobileSheetOpen(true);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch (err) {}
+    if (!btnDrag.current.hasMoved) {
+      setIsMobileSheetOpen(true);
+    }
   };
 
   // Exam Draft State & Auto Save
@@ -150,11 +180,13 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
   // Restore Draft
   useEffect(() => {
     const draft = localStorage.getItem(storageKey);
+    const savedTime = localStorage.getItem(`${storageKey}_time`);
     if (draft) {
       try {
         const parsed = JSON.parse(draft);
         if (Number(parsed.cheatCount) >= 4) {
           localStorage.removeItem(storageKey);
+          localStorage.removeItem(`${storageKey}_time`);
           if (parsed.ansPart1) setAnsPart1(parsed.ansPart1);
           if (parsed.ansPart2) setAnsPart2(parsed.ansPart2);
           if (parsed.ansPart3) setAnsPart3(parsed.ansPart3);
@@ -173,30 +205,40 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
           if (parsed.ansPart3) setAnsPart3(parsed.ansPart3);
           if (parsed.flaggedQuestions) setFlaggedQuestions(parsed.flaggedQuestions);
           if (parsed.cheatCount) setCheatCount(parsed.cheatCount);
-          if (parsed.timeLeft > 0) setTimeLeft(parsed.timeLeft);
+          const timeToRestore = savedTime ? parseInt(savedTime, 10) : parsed.timeLeft;
+          if (timeToRestore > 0) setTimeLeft(timeToRestore);
           if (parsed.examStartTime) examStartTimeRef.current = parsed.examStartTime;
           if (parsed.questionTimings) questionTimingsRef.current = parsed.questionTimings;
         } else {
           localStorage.removeItem(storageKey);
+          localStorage.removeItem(`${storageKey}_time`);
         }
       } catch (e) {}
     }
-  }, [exam.id, user.username]);
+  }, [exam.id, user.username, storageKey]);
 
-  // Auto Save Draft
+  // Auto Save Answers Draft (Chỉ chạy JSON.stringify khi học sinh thay đổi đáp án, cắm cờ hoặc cảnh báo)
   useEffect(() => {
     const draftData = { 
       ansPart1, 
       ansPart2, 
       ansPart3, 
       flaggedQuestions, 
-      timeLeft, 
       cheatCount,
       examStartTime: examStartTimeRef.current,
       questionTimings: questionTimingsRef.current,
     };
-    localStorage.setItem(storageKey, JSON.stringify(draftData));
-  }, [ansPart1, ansPart2, ansPart3, flaggedQuestions, timeLeft, cheatCount]);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(draftData));
+    } catch (e) {}
+  }, [ansPart1, ansPart2, ansPart3, flaggedQuestions, cheatCount, storageKey]);
+
+  // Tách riêng việc lưu thời gian đếm ngược: Lưu số nguyên đơn thuần mỗi giây, triệt tiêu JSON.stringify toàn bộ phiếu trả lời
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${storageKey}_time`, String(timeLeft));
+    } catch (e) {}
+  }, [timeLeft, storageKey]);
 
   // Anti-cheat Visibility Tracking: silent tracking, stop immediately at 4 screen exits
   const [cheatTerminated, setCheatTerminated] = useState<boolean>(false);
@@ -236,6 +278,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
     if (timerRef.current) clearInterval(timerRef.current);
     try {
       localStorage.removeItem(storageKey);
+      localStorage.removeItem(`${storageKey}_time`);
     } catch (e) {}
 
     const latest = latestDataRef.current;
@@ -452,18 +495,22 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
           />
         )}
 
-        {/* Floating Draggable Button for Mobile */}
+        {/* Floating Draggable Button for Mobile (Zero Re-render GPU Transform) */}
         {!isMobileSheetOpen && (
           <div
-            className="md:hidden fixed z-40 bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] px-4 py-2.5 border-3 border-[#111111] shadow-[4px_4px_0px_#111111] font-black flex items-center gap-2 cursor-move select-none"
-            style={{ left: `${btnPos.x}px`, top: `${btnPos.y}px`, touchAction: 'none' }}
+            ref={floatingBtnRef}
+            className="md:hidden fixed top-0 left-0 z-40 bg-[#FFC93C] hover:bg-[#ffd460] active:bg-[#e6b432] text-[#111111] px-4 py-2.5 border-3 border-[#111111] shadow-[4px_4px_0px_#111111] font-black flex items-center gap-2 cursor-move select-none will-change-transform"
+            style={{
+              transform: `translate3d(${btnDrag.current.currentX}px, ${btnDrag.current.currentY}px, 0)`,
+              touchAction: 'none',
+            }}
             onPointerDown={onBtnDown}
             onPointerMove={onBtnMove}
             onPointerUp={onBtnUp}
             onPointerCancel={onBtnUp}
           >
             <Edit3 className="w-4 h-4" />
-            <span className="text-xs uppercase">Phiếu Bài</span>
+            <span className="text-xs uppercase">Phiếu trả lời</span>
             <span className="bg-[#111111] text-white px-2 py-0.5 text-[10px] font-black">
               {totalAnswered}/{totalQuestions}
             </span>

@@ -1,5 +1,6 @@
 import { ExamItem, StudentAccount, ExamSubmission, SubmissionTiming } from '../types';
 import { INITIAL_EXAMS, INITIAL_STUDENTS, INITIAL_HISTORY, INITIAL_CLASSES } from '../data/initialData';
+import type { SyncWorkerRequest, SyncWorkerResponse } from '../workers/syncWorker';
 
 const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycby3mDVDZAlmuPoP2fXwJNyQXL5kdmWgqhoEu0FPMhYf9lwj1eqNwSVSGkVzA5d2YKAP/exec";
 
@@ -595,6 +596,32 @@ export const uploadPdfToGoogleDrive = async (
 // 3. Merges with local storage, ensuring newer remote edits (like deadline / config updates) always take precedence!
 export const normalizeExamTitle = (t?: string): string => (t || '').toLowerCase().replace(/\s+/g, ' ').trim();
 
+// Quản lý Singleton Web Worker & Chống gọi trùng lặp (Request Deduplication)
+let syncWorkerInstance: Worker | null = null;
+let inflightSyncPromise: Promise<{
+  exams: ExamItem[];
+  students: { [username: string]: StudentAccount };
+  history: ExamSubmission[];
+  classes: string[];
+  cloudSynced: boolean;
+  dataHash?: string;
+}> | null = null;
+
+function getSyncWorker(): Worker | null {
+  if (typeof window === 'undefined' || typeof Worker === 'undefined') return null;
+  if (!syncWorkerInstance) {
+    try {
+      syncWorkerInstance = new Worker(new URL('../workers/syncWorker.ts', import.meta.url), {
+        type: 'module',
+      });
+    } catch (e) {
+      console.warn('Web Worker initialization fallback:', e);
+      return null;
+    }
+  }
+  return syncWorkerInstance;
+}
+
 export const fetchAllData = async (
   userRole?: 'student' | 'teacher' | 'guest'
 ): Promise<{
@@ -603,355 +630,106 @@ export const fetchAllData = async (
   history: ExamSubmission[];
   classes: string[];
   cloudSynced: boolean;
+  dataHash?: string;
 }> => {
+  // Nếu đang có 1 tiến trình đồng bộ chưa xong, dùng chung Promise đó (Deduplication)
+  if (inflightSyncPromise) {
+    return inflightSyncPromise;
+  }
+
   initLocalStorageIfEmpty();
+
   const localExams = getLocalExams();
-  const localExamsMap = new Map<string, ExamItem>();
-  localExams.forEach((ex) => {
-    if (ex && ex.id) localExamsMap.set(ex.id, ex);
-  });
-
-  let serverExams: ExamItem[] = [];
-  let serverStudents: { [username: string]: StudentAccount } = {};
-  let serverHistory: ExamSubmission[] = [];
-  let serverClasses: string[] = [];
-  let serverFetched = false;
-
-  // Tier 1: Fetch from internal server /api/all with user role and authorization token
-  try {
-    const roleParam = userRole ? `?role=${encodeURIComponent(userRole)}` : '';
-    const headers = getAuthHeaders();
-    if (userRole === 'teacher') {
-      headers['x-user-role'] = 'teacher';
-    }
-    const sRes = await fetch(`/api/all${roleParam}`, {
-      cache: 'no-cache',
-      headers,
-    });
-    if (sRes.ok) {
-      const sJson = await safeFetchJson(sRes);
-      if (sJson && sJson.success && sJson.data) {
-        serverFetched = true;
-        if (Array.isArray(sJson.data.exams)) serverExams = sJson.data.exams;
-        if (sJson.data.students && typeof sJson.data.students === 'object') serverStudents = sJson.data.students;
-        if (Array.isArray(sJson.data.history)) serverHistory = sJson.data.history;
-        if (Array.isArray(sJson.data.classes)) serverClasses = sJson.data.classes;
-      }
-    }
-  } catch (e) {
-    // server route fallback
-  }
-
-  // Tier 2: Fetch from Google Apps Script if configured
-  const apiUrl = getApiUrl();
-  let gasSynced = false;
-  let gasExams: ExamItem[] = [];
-  let gasStudents: { [username: string]: StudentAccount } = {};
-  let gasHistory: ExamSubmission[] = [];
-
-  // Helper to normalize and auto-heal student object (prevent inverted Name vs Password)
-  const normalizeStudent = (raw: any, defaultKey?: string): StudentAccount | null => {
-    if (!raw) return null;
-    const u = String(raw.username || raw.sbd || raw.id || raw.ma_hs || defaultKey || '').trim();
-    if (!u) return null;
-
-    let n = String(raw.name || raw.ten || raw.ho_ten || raw.fullName || u).trim();
-    let p = String(raw.password !== undefined ? raw.password : raw.matkhau !== undefined ? raw.matkhau : '').trim();
-    const g = String(raw.group || raw.lop || raw.className || raw.class || raw.nhom || 'Chưa phân lớp').trim();
-
-    // If password contains spaces/Vietnamese accents while name does NOT -> they were inverted!
-    const pHasVietnamese = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(p) || p.includes(' ');
-    const nNoVietnamese = !/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/i.test(n) && !n.includes(' ');
-
-    if (pHasVietnamese && nNoVietnamese && n.length > 0) {
-      const temp = n;
-      n = p;
-      p = temp;
-    }
-
-    const av = String(raw.avatar || raw.Avatar || raw.anh || raw.Anh || '').trim();
-
-    return {
-      username: u,
-      name: n,
-      password: p,
-      group: g,
-      avatar: av || undefined,
-    };
-  };
-
-  if (apiUrl) {
-    try {
-      const gRes = await fetch(`${apiUrl}?action=get_all`, { mode: 'cors', cache: 'no-cache' });
-      if (gRes.ok) {
-        const rawData = await safeFetchJson(gRes);
-        const data = rawData?.data || rawData;
-        if (data && !data.error) {
-          gasSynced = true;
-
-          // Parse gas exams
-          const rawEx = data.exams || [];
-          const parsedGasExams: ExamItem[] = Array.isArray(rawEx)
-            ? rawEx
-            : typeof rawEx === 'object'
-            ? Object.values(rawEx)
-            : [];
-          gasExams = parsedGasExams.filter((ex) => ex && ex.id);
-
-          // Parse gas students
-          const rawSt = data.students || {};
-          if (Array.isArray(rawSt)) {
-            rawSt.forEach((s: any) => {
-              const norm = normalizeStudent(s);
-              if (norm) gasStudents[norm.username.toLowerCase()] = norm;
-            });
-          } else if (typeof rawSt === 'object') {
-            Object.entries(rawSt).forEach(([k, s]: [string, any]) => {
-              const norm = normalizeStudent(s, k);
-              if (norm) gasStudents[norm.username.toLowerCase()] = norm;
-            });
-          }
-
-          // Parse gas history
-          const rawH = data.history || [];
-          gasHistory = Array.isArray(rawH) ? rawH : typeof rawH === 'object' ? Object.values(rawH) : [];
-        }
-      }
-    } catch (e) {
-      console.warn("GAS API get_all fetch warning:", e);
-    }
-  }
-
-  // === SMART CONSOLIDATION OF EXAMS ===
-  // Primary authoritative source: Server > Google Apps Script > Local
-  const combinedMap = new Map<string, ExamItem>();
-
-  // 1. Load initial/local exams first as baseline
-  localExams.forEach((ex) => {
-    if (ex && ex.id) combinedMap.set(ex.id, ex);
-  });
-
-  // 2. Merge Google Apps Script exams
-  gasExams.forEach((gEx) => {
-    if (!gEx || !gEx.id) return;
-    const local = localExamsMap.get(gEx.id);
-    const existingFileLink = local?.questions?.file_link;
-
-    // Retain local base64 if remote has marker [PDF_STORED_IN_BROWSER]
-    let finalFile = gEx.questions?.file_link || '';
-    if (finalFile === '[PDF_STORED_IN_BROWSER]' && existingFileLink) {
-      finalFile = existingFileLink;
-    } else if (!finalFile && existingFileLink) {
-      finalFile = existingFileLink;
-    }
-
-    const existingEntry = combinedMap.get(gEx.id) || local;
-    const gHasAnswers = gEx.answers && (
-      (gEx.answers.p1 && Object.keys(gEx.answers.p1).length > 0) ||
-      (gEx.answers.p2 && Object.keys(gEx.answers.p2).length > 0) ||
-      (gEx.answers.p3 && Object.keys(gEx.answers.p3).length > 0)
-    );
-    const existingHasAnswers = existingEntry?.answers && (
-      (existingEntry.answers.p1 && Object.keys(existingEntry.answers.p1).length > 0) ||
-      (existingEntry.answers.p2 && Object.keys(existingEntry.answers.p2).length > 0) ||
-      (existingEntry.answers.p3 && Object.keys(existingEntry.answers.p3).length > 0)
-    );
-    const resolvedGasAnswers = gHasAnswers ? gEx.answers : (existingHasAnswers ? existingEntry.answers : (gEx.answers || existingEntry?.answers));
-
-    combinedMap.set(gEx.id, {
-      ...gEx,
-      duration: Number(gEx.duration) || 45,
-      answers: resolvedGasAnswers,
-      questions: {
-        ...(gEx.questions || {}),
-        file_link: finalFile,
-      },
-    });
-  });
-
-  // 3. Merge Server exams (Highest Priority across all connected browsers)
-  serverExams.forEach((sEx) => {
-    if (!sEx || !sEx.id) return;
-    const local = localExamsMap.get(sEx.id);
-    const existingFileLink = local?.questions?.file_link;
-
-    let finalFile = sEx.questions?.file_link || '';
-    if (finalFile === '[PDF_STORED_IN_BROWSER]' && existingFileLink) {
-      finalFile = existingFileLink;
-    } else if (!finalFile && existingFileLink) {
-      finalFile = existingFileLink;
-    }
-
-    const currentCombined = combinedMap.get(sEx.id) || local;
-    const sHasAnswers = sEx.answers && (
-      (sEx.answers.p1 && Object.keys(sEx.answers.p1).length > 0) ||
-      (sEx.answers.p2 && Object.keys(sEx.answers.p2).length > 0) ||
-      (sEx.answers.p3 && Object.keys(sEx.answers.p3).length > 0)
-    );
-    const currHasAnswers = currentCombined?.answers && (
-      (currentCombined.answers.p1 && Object.keys(currentCombined.answers.p1).length > 0) ||
-      (currentCombined.answers.p2 && Object.keys(currentCombined.answers.p2).length > 0) ||
-      (currentCombined.answers.p3 && Object.keys(currentCombined.answers.p3).length > 0)
-    );
-    const resolvedServerAnswers = sHasAnswers ? sEx.answers : (currHasAnswers ? currentCombined.answers : sEx.answers);
-
-    combinedMap.set(sEx.id, {
-      ...sEx,
-      duration: Number(sEx.duration) || 45,
-      answers: resolvedServerAnswers,
-      questions: {
-        ...(sEx.questions || {}),
-        file_link: finalFile,
-      },
-    });
-  });
-
-  const finalExams = Array.from(combinedMap.values());
-  const finalExamsList = finalExams.length > 0 ? finalExams : INITIAL_EXAMS;
-
-  // Protect student client storage: Strip answers if current session is student or guest
-  const storageExamsList = userRole === 'teacher'
-    ? finalExamsList
-    : finalExamsList.map((e) => {
-        const { answers, ...safe } = e;
-        return safe as ExamItem;
-      });
-
-  safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(storageExamsList));
-
-  // If server had 0 exams but local/gas had exams, bootstrap the server store
-  if (serverFetched && serverExams.length === 0 && finalExamsList.length > 0 && userRole === 'teacher') {
-    fetch('/api/sync/bootstrap', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ exams: finalExamsList }),
-    }).catch(() => {});
-  }
-
-  // === SMART CONSOLIDATION OF STUDENTS ===
   let localStudents: { [username: string]: StudentAccount } = {};
   try {
-    const rawLocalStudents = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENTS) || '{}');
-    if (typeof rawLocalStudents === 'object' && !Array.isArray(rawLocalStudents)) {
-      localStudents = rawLocalStudents;
-    }
-  } catch (e) {
-    localStudents = {};
-  }
+    const rawS = JSON.parse(localStorage.getItem(STORAGE_KEYS.STUDENTS) || '{}');
+    if (rawS && typeof rawS === 'object' && !Array.isArray(rawS)) localStudents = rawS;
+  } catch {}
 
-  // Authoritative priority: Server (which syncs with Sheet) > Google Apps Script > Local
-  let rawMerged: { [username: string]: any } = {};
-  if (Object.keys(serverStudents).length > 0) {
-    rawMerged = { ...serverStudents };
-  } else if (Object.keys(gasStudents).length > 0) {
-    rawMerged = { ...gasStudents };
-  } else {
-    rawMerged = { ...localStudents };
-  }
+  const localHistory = getLocalHistory();
+  const apiUrl = getApiUrl();
+  const worker = getSyncWorker();
 
-  const mergedStudents: { [username: string]: StudentAccount } = {};
-  Object.entries(rawMerged).forEach(([k, s]) => {
-    const norm = normalizeStudent(s, k);
-    if (norm && norm.username) {
-      mergedStudents[norm.username.toLowerCase()] = norm;
-    }
-  });
-  safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(mergedStudents));
+  if (worker) {
+    inflightSyncPromise = new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        inflightSyncPromise = null;
+        resolve({
+          exams: localExams,
+          students: localStudents,
+          history: localHistory,
+          classes: INITIAL_CLASSES,
+          cloudSynced: false,
+        });
+      }, 12000);
 
-  // Sync latest avatar to current logged-in user in localStorage
-  try {
-    const storedUser = getStoredCurrentUser();
-    if (storedUser && (storedUser.role === 'student' || storedUser.role === 'guest')) {
-      const myKey = String(storedUser.username || '').toLowerCase().trim();
-      const myLatest = mergedStudents[myKey];
-      if (myLatest && myLatest.avatar && myLatest.avatar !== storedUser.avatar) {
-        storedUser.avatar = myLatest.avatar;
-        safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(storedUser));
-      }
-    }
-  } catch (e) {}
+      const handleMessage = (event: MessageEvent) => {
+        clearTimeout(timeoutId);
+        worker.removeEventListener('message', handleMessage);
+        inflightSyncPromise = null;
 
-  // === SMART CONSOLIDATION OF HISTORY ===
-  let localHistory: ExamSubmission[] = [];
-  try {
-    const rawLocalH = JSON.parse(localStorage.getItem(STORAGE_KEYS.HISTORY) || '[]');
-    if (Array.isArray(rawLocalH)) localHistory = rawLocalH;
-  } catch (e) {
-    localHistory = [];
-  }
+        const res = event.data;
+        if (res && res.success) {
+          // Lưu kết quả đã xử lý từ Worker xuống LocalStorage
+          safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(res.exams));
+          safeSetItem(STORAGE_KEYS.STUDENTS, JSON.stringify(res.students));
+          safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(res.history));
+          safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(res.classes));
 
-  const historyMap = new Map<string, ExamSubmission>();
+          // Đồng bộ avatar mới nhất cho user hiện tại
+          try {
+            const storedUser = getStoredCurrentUser();
+            if (storedUser && (storedUser.role === 'student' || storedUser.role === 'guest')) {
+              const myKey = String(storedUser.username || '').toLowerCase().trim();
+              const myLatest = res.students[myKey];
+              if (myLatest && myLatest.avatar && myLatest.avatar !== storedUser.avatar) {
+                storedUser.avatar = myLatest.avatar;
+                safeSetItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(storedUser));
+              }
+            }
+          } catch {}
 
-  // Process in order: Local -> GAS -> Server (Server has highest authority for graded results)
-  [...localHistory, ...gasHistory, ...serverHistory].forEach((h) => {
-    if (h && h.username && h.examTitle) {
-      const key = `${h.username}_${h.examTitle}_${h.submitted_at}`;
-      const existing = historyMap.get(key);
-
-      const mergedDetails = h.details || existing?.details;
-      const mergedCorrectAnswers = h.correctAnswers || existing?.correctAnswers;
-      const finalScore = h.score !== undefined && h.score !== 0 ? h.score : (existing?.score || h.score || 0);
-      const finalCorrect = h.correct !== undefined && h.correct !== 0 ? h.correct : (existing?.correct || h.correct || 0);
-
-      historyMap.set(key, {
-        ...(existing || {}),
-        ...h,
-        score: finalScore,
-        correct: finalCorrect,
-        details: mergedDetails,
-        correctAnswers: mergedCorrectAnswers,
-      });
-    }
-  });
-
-  const mergedHistory = Array.from(historyMap.values()).map((h) => {
-    if (!h.correctAnswers) {
-      const matched = [...finalExamsList, ...gasExams].find(
-        (e) => (e.id && e.id === h.examId) ||
-               normalizeExamTitle(e.title) === normalizeExamTitle(h.examTitle) ||
-               normalizeExamTitle(e.title).includes(normalizeExamTitle(h.examTitle)) ||
-               normalizeExamTitle(h.examTitle).includes(normalizeExamTitle(e.title))
-      );
-      if (matched && matched.answers) {
-        return {
-          ...h,
-          correctAnswers: matched.answers,
-        };
-      }
-    }
-    return h;
-  });
-
-  safeSetItem(STORAGE_KEYS.HISTORY, JSON.stringify(mergedHistory));
-
-  // === DEDUCE UNIQUE CLASSES ===
-  const classSet = new Set<string>(INITIAL_CLASSES);
-  if (Array.isArray(serverClasses)) {
-    serverClasses.forEach((c) => c && classSet.add(c.trim()));
-  }
-  Object.values(mergedStudents).forEach((s) => {
-    if (s && s.group && s.group.trim()) classSet.add(s.group.trim());
-  });
-  finalExamsList.forEach((ex) => {
-    if (ex?.questions?.target_group) {
-      ex.questions.target_group.split(',').forEach((g) => {
-        const trimmed = g.trim();
-        if (trimmed && trimmed.toLowerCase() !== 'tất cả' && trimmed.toLowerCase() !== 'all') {
-          classSet.add(trimmed);
+          resolve({
+            exams: res.exams,
+            students: res.students,
+            history: res.history,
+            classes: res.classes,
+            cloudSynced: res.cloudSynced,
+            dataHash: res.dataHash,
+          });
+        } else {
+          resolve({
+            exams: localExams,
+            students: localStudents,
+            history: localHistory,
+            classes: INITIAL_CLASSES,
+            cloudSynced: false,
+          });
         }
+      };
+
+      worker.addEventListener('message', handleMessage);
+      worker.postMessage({
+        apiUrl,
+        userRole,
+        localExams,
+        localStudents,
+        localHistory,
+        initialClasses: INITIAL_CLASSES,
+        initialExams: INITIAL_EXAMS,
       });
-    }
-  });
+    });
 
-  const classesList = Array.from(classSet);
-  safeSetItem(STORAGE_KEYS.CLASSES, JSON.stringify(classesList));
+    return inflightSyncPromise;
+  }
 
+  // Fallback nếu trình duyệt quá cũ không hỗ trợ Web Worker
   return {
-    exams: storageExamsList,
-    students: mergedStudents,
-    history: mergedHistory,
-    classes: classesList,
-    cloudSynced: serverFetched || gasSynced,
+    exams: localExams,
+    students: localStudents,
+    history: localHistory,
+    classes: INITIAL_CLASSES,
+    cloudSynced: false,
   };
 };
 

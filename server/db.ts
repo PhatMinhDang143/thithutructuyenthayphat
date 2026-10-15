@@ -110,9 +110,16 @@ function normalizeStore(rawObj: any): ServerStore {
       const examId = item.id || `ex_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       if (!seenExamIds.has(examId)) {
         seenExamIds.add(examId);
+        let questions = item.questions;
+        if (!questions && item.file_url && typeof item.file_url === 'string' && item.file_url.startsWith('{')) {
+          try {
+            questions = JSON.parse(item.file_url);
+          } catch (e) {}
+        }
         store.exams.push({
           ...item,
           id: examId,
+          questions: questions || item.questions,
         });
       }
     }

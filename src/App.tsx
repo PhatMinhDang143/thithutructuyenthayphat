@@ -1,22 +1,87 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { AppUser, ExamItem, ExamSubmission, StudentAnswers, SubmissionTiming } from './types';
 import { Header } from './components/common/Header';
 import { AuthView } from './components/student/AuthView';
-import { LobbyView } from './components/student/LobbyView';
-import { ExamView } from './components/student/ExamView';
-import { ResultView } from './components/student/ResultView';
+import {
+  fetchAllData,
+  submitExamResult,
+  submitExamAnswersToServer,
+  getStoredCurrentUser,
+  logoutUser,
+  updateStudentAvatar,
+} from './services/storageService';
+import {
+  LayoutDashboard,
+  FileSpreadsheet,
+  ShieldCheck,
+  Activity,
+  Power,
+  Component,
+  BarChart2,
+  Menu,
+  X,
+  ChevronRight,
+} from 'lucide-react';
 
-import { DashboardView } from './components/teacher/DashboardView';
-import { ExamsMain } from './components/teacher/ExamsMain';
-import { StudentsManager } from './components/teacher/StudentsManager';
-import { HistoryViewer } from './components/teacher/HistoryViewer';
-import { QuestionAnalyticsModal } from './components/teacher/QuestionAnalyticsModal';
+// ================= LAZY LOAD: STUDENT VIEWS =================
+const LobbyView = lazy(() =>
+  import('./components/student/LobbyView').then((m) => ({ default: m.LobbyView }))
+);
+const ExamView = lazy(() =>
+  import('./components/student/ExamView').then((m) => ({ default: m.ExamView }))
+);
+const ResultView = lazy(() =>
+  import('./components/student/ResultView').then((m) => ({ default: m.ResultView }))
+);
 
-import { fetchAllData, submitExamResult, submitExamAnswersToServer, getStoredCurrentUser, logoutUser, updateStudentAvatar } from './services/storageService';
-import { LayoutDashboard, FileSpreadsheet, ShieldCheck, Activity, Power, Component, BarChart2, Menu, X, ChevronRight } from 'lucide-react';
+// ================= LAZY LOAD: TEACHER VIEWS =================
+const DashboardView = lazy(() =>
+  import('./components/teacher/DashboardView').then((m) => ({ default: m.DashboardView }))
+);
+const ExamsMain = lazy(() =>
+  import('./components/teacher/ExamsMain').then((m) => ({ default: m.ExamsMain }))
+);
+const StudentsManager = lazy(() =>
+  import('./components/teacher/StudentsManager').then((m) => ({ default: m.StudentsManager }))
+);
+const HistoryViewer = lazy(() =>
+  import('./components/teacher/HistoryViewer').then((m) => ({ default: m.HistoryViewer }))
+);
+const QuestionAnalyticsModal = lazy(() =>
+  import('./components/teacher/QuestionAnalyticsModal').then((m) => ({
+    default: m.QuestionAnalyticsModal,
+  }))
+);
+
+// ================= NEO-BRUTALIST SKELETON FALLBACK =================
+const BrutalistSkeleton: React.FC<{ label?: string }> = ({ label = 'Đang tải mô-đun giao diện...' }) => (
+  <div className="w-full max-w-6xl mx-auto p-4 sm:p-8 space-y-6 animate-pulse">
+    <div className="bg-white border-3 border-[#111111] p-6 shadow-[6px_6px_0px_#111111] flex items-center justify-between">
+      <div className="space-y-3 w-2/3">
+        <div className="h-6 bg-[#FFC93C] border-2 border-[#111111] w-48" />
+        <div className="h-4 bg-[#FDF6E9] border border-[#111111] w-3/4" />
+      </div>
+      <div className="w-12 h-12 bg-[#4D6BFE] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] flex items-center justify-center">
+        <div className="w-5 h-5 border-3 border-white border-t-transparent animate-spin" />
+      </div>
+    </div>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      {[1, 2, 3].map((item) => (
+        <div
+          key={item}
+          className="bg-white border-3 border-[#111111] p-5 h-44 shadow-[5px_5px_0px_#111111] flex flex-col justify-between"
+        >
+          <div className="h-4 bg-[#FDF6E9] border border-[#111111] w-1/2" />
+          <div className="h-6 bg-neutral-200 border border-[#111111] w-full" />
+          <div className="h-10 bg-[#FFC93C]/60 border-2 border-[#111111] w-full" />
+        </div>
+      ))}
+    </div>
+    <p className="text-center text-xs font-black uppercase tracking-wider text-[#111111]">{label}</p>
+  </div>
+);
 
 export default function App() {
-  // Current logged in user (null = show Login screen)
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
     return getStoredCurrentUser();
   });
@@ -28,6 +93,9 @@ export default function App() {
   const [classes, setClasses] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // Hash fingerprint để chống re-render thừa khi dữ liệu nền không đổi
+  const lastDataHashRef = useRef<string>('');
+
   // Student Flow State
   const [studentSubView, setStudentSubView] = useState<'lobby' | 'exam' | 'result'>('lobby');
   const [selectedExam, setSelectedExam] = useState<ExamItem | null>(null);
@@ -35,7 +103,9 @@ export default function App() {
   const [leaderboard, setLeaderboard] = useState<ExamSubmission[]>([]);
 
   // Teacher Flow State
-  const [teacherSubView, setTeacherSubView] = useState<'dashboard' | 'exams' | 'students' | 'history' | 'analytics'>('dashboard');
+  const [teacherSubView, setTeacherSubView] = useState<
+    'dashboard' | 'exams' | 'students' | 'history' | 'analytics'
+  >('dashboard');
   const [teacherMobileMenuOpen, setTeacherMobileMenuOpen] = useState<boolean>(false);
 
   const handleUpdateAvatar = async (newAvatar: string) => {
@@ -43,7 +113,7 @@ export default function App() {
     const updatedUser = { ...currentUser, avatar: newAvatar };
     setCurrentUser(updatedUser);
     await updateStudentAvatar(currentUser.username, newAvatar, updatedUser);
-    await loadData(false);
+    await loadData(false, undefined, true);
   };
 
   const teacherNavItems = [
@@ -54,20 +124,33 @@ export default function App() {
     { id: 'analytics' as const, label: 'Phân Tích Đúng / Sai', shortLabel: 'Phân Tích Đề', icon: BarChart2, color: '#00E599' },
   ];
 
-  // Data Loading (supports silent background sync and role-based data filtering)
-  const loadData = async (showLoadingSpinner: boolean = true, userRoleOverride?: 'student' | 'teacher' | 'guest') => {
+  // Data Loading (chạy qua Web Worker và chỉ setState khi dữ liệu thực sự thay đổi)
+  const loadData = async (
+    showLoadingSpinner: boolean = true,
+    userRoleOverride?: 'student' | 'teacher' | 'guest',
+    forceUpdate: boolean = false
+  ) => {
     if (showLoadingSpinner) setLoading(true);
     try {
       const activeRole = userRoleOverride || currentUser?.role;
       const data = await fetchAllData(activeRole);
-      setExams(data.exams);
-      setStudents(data.students);
-      setHistory(data.history);
-      setClasses(data.classes);
 
-      // Auto-synchronize currentUser avatar from Google Sheets (critical for phones/other devices)
+      // Tạo mã băm (fingerprint) nhanh từ kết quả của Worker
+      const incomingHash =
+        (data as any).dataHash ||
+        `${data.exams.length}_${Object.keys(data.students).length}_${data.history.length}_${data.history[0]?.id || ''}_${data.exams.map((e) => e.updatedAt || e.id).join(',')}`;
+
+      if (forceUpdate || incomingHash !== lastDataHashRef.current) {
+        lastDataHashRef.current = incomingHash;
+        setExams(data.exams);
+        setStudents(data.students);
+        setHistory(data.history);
+        setClasses(data.classes);
+      }
+
       if (currentUser && (currentUser.role === 'student' || currentUser.role === 'guest')) {
-        const myLatest = data.students[currentUser.username.toLowerCase()] || data.students[currentUser.username];
+        const myLatest =
+          data.students[currentUser.username.toLowerCase()] || data.students[currentUser.username];
         if (myLatest && myLatest.avatar && myLatest.avatar !== currentUser.avatar) {
           const updatedUser = { ...currentUser, avatar: myLatest.avatar };
           setCurrentUser(updatedUser);
@@ -84,14 +167,11 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Initial fetch
-    loadData(true);
+    loadData(true, undefined, true);
 
-    // Cross-tab and window event synchronization
     const handleSyncEvent = () => {
-      // If student is currently taking an exam, don't interrupt their screen
       if (studentSubView !== 'exam') {
-        loadData(false);
+        loadData(false, undefined, true);
       }
     };
 
@@ -99,9 +179,8 @@ export default function App() {
     window.addEventListener('app_data_updated', handleSyncEvent);
     window.addEventListener('focus', handleSyncEvent);
 
-    // Periodic background sync interval (every 8 seconds)
     const interval = setInterval(() => {
-      if (studentSubView !== 'exam') {
+      if (studentSubView !== 'exam' && !document.hidden) {
         loadData(false);
       }
     }, 8000);
@@ -121,22 +200,18 @@ export default function App() {
     setSelectedExam(null);
     setResultData(null);
     setTeacherSubView('dashboard');
-    // Refresh data with guest/student view
-    loadData(false, 'guest');
+    loadData(false, 'guest', true);
   };
 
-  // Authoritative Server-Side Exam Submission & Grading
   const handleExamSubmit = async (
-    studentAnswers: StudentAnswers, 
-    cheatCount: number, 
+    studentAnswers: StudentAnswers,
+    cheatCount: number,
     exam: ExamItem,
     timing?: SubmissionTiming
   ) => {
     if (!currentUser) return;
-
     setLoading(true);
 
-    // Send raw student answers to the server. The server computes the score securely from its hidden answer key.
     const res = await submitExamAnswersToServer({
       examId: exam.id,
       examTitle: exam.title,
@@ -156,13 +231,15 @@ export default function App() {
       setResultData(serverGradedSubmission);
       setStudentSubView('result');
 
-      // Refresh history
       const updatedData = await fetchAllData(currentUser.role);
       setHistory(updatedData.history);
 
-      // Compute leaderboard for this exam (Score DESC, then Duration ASC)
       const examLeaderboard = updatedData.history
-        .filter((h) => (h.examTitle || '').trim().toLowerCase() === (exam.title || '').trim().toLowerCase() || (h.examId && h.examId === exam.id))
+        .filter(
+          (h) =>
+            (h.examTitle || '').trim().toLowerCase() === (exam.title || '').trim().toLowerCase() ||
+            (h.examId && h.examId === exam.id)
+        )
         .sort((a, b) => {
           const sB = Number(b.score) || 0;
           const sA = Number(a.score) || 0;
@@ -174,15 +251,12 @@ export default function App() {
 
       setLeaderboard(examLeaderboard);
     } else {
-      if (res.error && res.error.includes('vượt quá số lần làm bài')) {
+      if (res.error && res.error.includes('vượt quá')) {
         alert(res.error);
         setSelectedExam(null);
         setStudentSubView('lobby');
         return;
       }
-
-      // Fallback: If server is temporarily unreachable, create local submission
-      console.warn('Server grading returned error, attempting fallback submission:', res.error);
       const fallbackPayload: ExamSubmission = {
         username: currentUser.username,
         name: currentUser.name,
@@ -196,7 +270,6 @@ export default function App() {
         details: studentAnswers,
         timing,
       };
-
       setResultData(fallbackPayload);
       setStudentSubView('result');
       await submitExamResult(fallbackPayload);
@@ -204,38 +277,39 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-[#030712] text-slate-100 flex flex-col font-sans">
-      {/* Top Header (Hidden during student exam view to give full 100dvh space for reading and answering) */}
-      {!(currentUser && (currentUser.role === 'student' || currentUser.role === 'guest') && studentSubView === 'exam') && (
+    <div className="min-h-[100dvh] bg-[#FDF6E9] text-[#111111] flex flex-col font-sans">
+      {!(
+        currentUser &&
+        (currentUser.role === 'student' || currentUser.role === 'guest') &&
+        studentSubView === 'exam'
+      ) && (
         <Header
           currentUser={currentUser}
           onLogout={handleLogout}
-          onRefreshData={loadData}
+          onRefreshData={() => loadData(true, undefined, true)}
           onUpdateAvatar={handleUpdateAvatar}
         />
       )}
 
       <main className="flex-1 flex flex-col">
-        {/* 1. NO USER LOGGED IN -> UNIFIED AUTH VIEW */}
+        {/* 1. NO USER LOGGED IN */}
         {!currentUser && (
           <AuthView
             studentsMap={students}
             onLoginSuccess={(usr) => {
-              // Validate user object
-              const validRole = usr.role === 'teacher' ? 'teacher' : usr.role === 'guest' ? 'guest' : 'student';
+              const validRole =
+                usr.role === 'teacher' ? 'teacher' : usr.role === 'guest' ? 'guest' : 'student';
               const cleanUser: AppUser = {
                 username: String(usr.username || '').trim(),
                 name: String(usr.name || usr.username || 'Học sinh').trim(),
                 group: String(usr.group || 'Chưa phân lớp').trim(),
                 role: validRole,
               };
-
               setCurrentUser(cleanUser);
-              loadData(false, validRole);
+              loadData(false, validRole, true);
               if (validRole === 'teacher') {
                 setTeacherSubView('dashboard');
               } else {
-                // Strictly set student flow to lobby view upon login
                 setStudentSubView('lobby');
                 setSelectedExam(null);
                 setResultData(null);
@@ -258,13 +332,12 @@ export default function App() {
         {/* 2. LOGGED IN AS TEACHER / ADMIN */}
         {currentUser && currentUser.role === 'teacher' && (
           <div className="flex flex-col lg:flex-row w-full min-h-[calc(100dvh-65px)] bg-[#FDF6E9] text-[#111111]">
-            {/* Desktop Teacher Navigation Sidebar (Visible on lg: screens and above) */}
             <aside className="hidden lg:flex w-64 bg-white border-r-3 border-[#111111] flex-col shrink-0 p-4 space-y-3 z-20 shadow-[4px_0px_0px_#111111]">
               <div className="p-3 bg-[#FDF6E9] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] flex items-center gap-2.5">
                 <Component className="w-5 h-5 text-[#4D6BFE]" />
                 <div>
                   <h2 className="font-black text-xs text-[#111111] uppercase tracking-wider">
-                    Bảng Điều Hành GV
+                    Bảng Điều Khiển GV
                   </h2>
                   <p className="text-[10px] text-[#4D6BFE] font-black uppercase">Management Console</p>
                 </div>
@@ -302,25 +375,22 @@ export default function App() {
               </div>
             </aside>
 
-            {/* Mobile & Tablet Teacher Top Navigation (Visible on screens < lg) */}
+            {/* Mobile Teacher Top Navigation */}
             <div className="lg:hidden w-full bg-white border-b-2 border-[#111111] sticky top-[53px] sm:top-[57px] z-30 shadow-[0_3px_0px_#111111]">
-              {/* Row 1: Current View Badge + Menu Toggle + Quick Logout */}
               <div className="flex items-center justify-between px-3 py-2 bg-[#FFFFFF] border-b border-neutral-200">
                 <div className="flex items-center gap-2 min-w-0">
                   <button
                     type="button"
                     onClick={() => setTeacherMobileMenuOpen(true)}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FFC93C] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase shrink-0"
-                    title="Mở toàn bộ danh mục chức năng"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FFC93C] text-[#111111] border-2 border-[#111111] shadow-[2px_2px_0px_#111111] font-black text-xs uppercase shrink-0"
                   >
                     <Menu className="w-4 h-4" />
                     <span>Menu GV</span>
                   </button>
-
-                  {/* Active view indicator */}
                   <div className="flex items-center gap-1.5 min-w-0 pl-1">
                     {(() => {
-                      const activeItem = teacherNavItems.find((t) => t.id === teacherSubView) || teacherNavItems[0];
+                      const activeItem =
+                        teacherNavItems.find((t) => t.id === teacherSubView) || teacherNavItems[0];
                       const ActiveIcon = activeItem.icon;
                       return (
                         <>
@@ -335,19 +405,16 @@ export default function App() {
                     })()}
                   </div>
                 </div>
-
                 <button
                   type="button"
                   onClick={handleLogout}
                   className="px-2 py-1 bg-[#E63946] text-white border border-[#111111] shadow-[1px_1px_0px_#111111] text-[10px] font-black uppercase flex items-center gap-1 shrink-0 ml-2"
-                  title="Đăng xuất giáo viên"
                 >
                   <Power className="w-3 h-3" />
                   <span className="hidden xs:inline">Thoát</span>
                 </button>
               </div>
 
-              {/* Row 2: Smooth Horizontal Scrollable Tabs */}
               <div className="flex items-center gap-1.5 px-2.5 py-2 overflow-x-auto no-scrollbar bg-[#F8F9FA]">
                 {teacherNavItems.map((item) => {
                   const Icon = item.icon;
@@ -372,18 +439,13 @@ export default function App() {
               </div>
             </div>
 
-            {/* Mobile Drawer (Slide out menu from left) */}
             {teacherMobileMenuOpen && (
               <div className="fixed inset-0 z-50 flex lg:hidden">
-                {/* Backdrop */}
                 <div
                   className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
                   onClick={() => setTeacherMobileMenuOpen(false)}
                 />
-
-                {/* Drawer Content */}
                 <div className="relative w-[85%] max-w-xs bg-white border-r-3 border-[#111111] shadow-[5px_0px_0px_#111111] flex flex-col p-4 z-50 h-full overflow-y-auto">
-                  {/* Drawer Header */}
                   <div className="flex items-center justify-between pb-3 mb-3 border-b-2 border-[#111111]">
                     <div className="flex items-center gap-2">
                       <div className="p-1.5 bg-[#FFC93C] border-2 border-[#111111] shadow-[1px_1px_0px_#111111]">
@@ -391,22 +453,20 @@ export default function App() {
                       </div>
                       <div>
                         <h2 className="font-black text-xs text-[#111111] uppercase tracking-wider">
-                          Bảng Điều Hành GV
+                          Bảng Điều Khiển GV
                         </h2>
-                        <p className="text-[9px] text-[#4D6BFE] font-black uppercase">Chế độ Di Động</p>
+                        <p className="text-[9px] text-[#4D6BFE] font-black uppercase">Chế Độ Di Động</p>
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => setTeacherMobileMenuOpen(false)}
-                      className="p-1.5 bg-neutral-100 hover:bg-neutral-200 border-2 border-[#111111] shadow-[1px_1px_0px_#111111] text-[#111111]"
-                      title="Đóng menu"
+                      className="p-1.5 bg-neutral-100 hover:bg-neutral-200 border-2 border-[#111111]"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   </div>
 
-                  {/* Navigation Links in Drawer */}
                   <nav className="flex-1 space-y-2">
                     {teacherNavItems.map((item) => {
                       const Icon = item.icon;
@@ -436,7 +496,6 @@ export default function App() {
                     })}
                   </nav>
 
-                  {/* Drawer Footer */}
                   <div className="pt-3 mt-3 border-t-2 border-[#111111]">
                     <button
                       type="button"
@@ -444,7 +503,7 @@ export default function App() {
                         setTeacherMobileMenuOpen(false);
                         handleLogout();
                       }}
-                      className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 font-black text-xs uppercase text-white bg-[#E63946] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] transition-all"
+                      className="w-full flex items-center justify-center gap-2 px-3.5 py-2.5 font-black text-xs uppercase text-white bg-[#E63946] border-2 border-[#111111] shadow-[3px_3px_0px_#111111]"
                     >
                       <Power className="w-4 h-4" /> Đăng Xuất GV
                     </button>
@@ -453,38 +512,50 @@ export default function App() {
               </div>
             )}
 
-            {/* Teacher Content View - 100% full width and fluid on mobile */}
+            {/* Teacher Content View wrapped in Suspense */}
             <div className="flex-1 w-full min-w-0 p-2.5 sm:p-4 lg:p-8 overflow-y-auto custom-scroll">
-              {teacherSubView === 'dashboard' && (
-                <DashboardView
-                  exams={exams}
-                  students={students}
-                  history={history}
-                  classes={classes}
-                  onNavigateToAnalytics={() => setTeacherSubView('analytics')}
-                />
-              )}
-
-              {teacherSubView === 'exams' && (
-                <ExamsMain exams={exams} classes={classes} onRefresh={loadData} history={history} />
-              )}
-
-              {teacherSubView === 'students' && (
-                <StudentsManager students={students} classes={classes} onRefresh={loadData} />
-              )}
-
-              {teacherSubView === 'history' && (
-                <HistoryViewer history={history} classes={classes} onRefresh={loadData} exams={exams} />
-              )}
-
-              {teacherSubView === 'analytics' && (
-                <QuestionAnalyticsModal
-                  embedded={true}
-                  exams={exams}
-                  history={history}
-                  availableClasses={classes}
-                />
-              )}
+              <Suspense fallback={<BrutalistSkeleton label="Đang tải công cụ quản lý Giáo viên..." />}>
+                {teacherSubView === 'dashboard' && (
+                  <DashboardView
+                    exams={exams}
+                    students={students}
+                    history={history}
+                    classes={classes}
+                    onNavigateToAnalytics={() => setTeacherSubView('analytics')}
+                  />
+                )}
+                {teacherSubView === 'exams' && (
+                  <ExamsMain
+                    exams={exams}
+                    classes={classes}
+                    onRefresh={() => loadData(true, undefined, true)}
+                    history={history}
+                  />
+                )}
+                {teacherSubView === 'students' && (
+                  <StudentsManager
+                    students={students}
+                    classes={classes}
+                    onRefresh={() => loadData(true, undefined, true)}
+                  />
+                )}
+                {teacherSubView === 'history' && (
+                  <HistoryViewer
+                    history={history}
+                    classes={classes}
+                    onRefresh={() => loadData(true, undefined, true)}
+                    exams={exams}
+                  />
+                )}
+                {teacherSubView === 'analytics' && (
+                  <QuestionAnalyticsModal
+                    embedded={true}
+                    exams={exams}
+                    history={history}
+                    availableClasses={classes}
+                  />
+                )}
+              </Suspense>
             </div>
           </div>
         )}
@@ -492,52 +563,58 @@ export default function App() {
         {/* 3. LOGGED IN AS STUDENT / GUEST */}
         {currentUser && (currentUser.role === 'student' || currentUser.role === 'guest') && (
           <div className="w-full">
-            {studentSubView === 'exam' && selectedExam ? (
-              <ExamView user={currentUser} exam={selectedExam} onExamSubmit={handleExamSubmit} />
-            ) : studentSubView === 'result' && selectedExam && resultData ? (
-              <ResultView
-                user={currentUser}
-                exam={selectedExam}
-                resultData={resultData}
-                leaderboard={leaderboard}
-                onUpdateAvatar={handleUpdateAvatar}
-                onBackToLobby={() => {
-                  setSelectedExam(null);
-                  setResultData(null);
-                  setStudentSubView('lobby');
-                }}
-              />
-            ) : (
-              // Default fallback: Always render LobbyView if not in active exam or result view
-              <LobbyView
-                user={currentUser}
-                exams={exams || []}
-                history={history || []}
-                loading={loading}
-                onLogout={handleLogout}
-                onUpdateAvatar={handleUpdateAvatar}
-                onSelectExam={(ex) => {
-                  setSelectedExam(ex);
-                  setStudentSubView('exam');
-                }}
-                onViewResult={(ex, submission) => {
-                  setSelectedExam(ex);
-                  setResultData(submission);
-                  const examLeaderboard = (history || [])
-                    .filter((h) => (h.examTitle || '').trim().toLowerCase() === (ex.title || '').trim().toLowerCase() || (h.examId && h.examId === ex.id))
-                    .sort((a, b) => {
-                      const sB = Number(b.score) || 0;
-                      const sA = Number(a.score) || 0;
-                      if (sB !== sA) return sB - sA;
-                      const tA = a.timing?.totalSeconds || 999999;
-                      const tB = b.timing?.totalSeconds || 999999;
-                      return tA - tB;
-                    });
-                  setLeaderboard(examLeaderboard);
-                  setStudentSubView('result');
-                }}
-              />
-            )}
+            <Suspense fallback={<BrutalistSkeleton label="Đang chuẩn bị không gian phòng thi..." />}>
+              {studentSubView === 'exam' && selectedExam ? (
+                <ExamView user={currentUser} exam={selectedExam} onExamSubmit={handleExamSubmit} />
+              ) : studentSubView === 'result' && selectedExam && resultData ? (
+                <ResultView
+                  user={currentUser}
+                  exam={selectedExam}
+                  resultData={resultData}
+                  leaderboard={leaderboard}
+                  onUpdateAvatar={handleUpdateAvatar}
+                  onBackToLobby={() => {
+                    setSelectedExam(null);
+                    setResultData(null);
+                    setStudentSubView('lobby');
+                  }}
+                />
+              ) : (
+                <LobbyView
+                  user={currentUser}
+                  exams={exams || []}
+                  history={history || []}
+                  loading={loading}
+                  onLogout={handleLogout}
+                  onUpdateAvatar={handleUpdateAvatar}
+                  onSelectExam={(ex) => {
+                    setSelectedExam(ex);
+                    setStudentSubView('exam');
+                  }}
+                  onViewResult={(ex, submission) => {
+                    setSelectedExam(ex);
+                    setResultData(submission);
+                    const examLeaderboard = (history || [])
+                      .filter(
+                        (h) =>
+                          (h.examTitle || '').trim().toLowerCase() ===
+                            (ex.title || '').trim().toLowerCase() ||
+                          (h.examId && h.examId === ex.id)
+                      )
+                      .sort((a, b) => {
+                        const sB = Number(b.score) || 0;
+                        const sA = Number(a.score) || 0;
+                        if (sB !== sA) return sB - sA;
+                        const tA = a.timing?.totalSeconds || 999999;
+                        const tB = b.timing?.totalSeconds || 999999;
+                        return tA - tB;
+                      });
+                    setLeaderboard(examLeaderboard);
+                    setStudentSubView('result');
+                  }}
+                />
+              )}
+            </Suspense>
           </div>
         )}
       </main>

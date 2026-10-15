@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { initDatabase, getStore, executeTransaction, ServerStore } from './server/db';
+import { isExamAllowedForStudent } from './src/utils/gradeUtils';
 
 const app = express();
 const PORT = 3000;
@@ -754,23 +755,14 @@ app.get('/api/all', (req, res) => {
     // 1. Sanitize exams (completely strip answer keys)
     const sanitizedExams = store.exams.map(sanitizeExamForStudent);
 
-    // 2. Filter exams based on student group or guest scope
+    // 2. Filter exams based on student grade/group or guest scope
+    // Triệt tiêu lỗi: đề Khối 11 hiển thị trên tài khoản học sinh Khối 12
     if (user && user.role === 'student') {
       const studentGroup = String(user.group || '').toLowerCase().trim();
-      examList = sanitizedExams.filter((exam) => {
-        const target = String(exam.questions?.target_group || '').toLowerCase().trim();
-        if (!target || target === 'tất cả' || target === 'all' || target.includes('tất cả')) {
-          return true;
-        }
-        const groups = target.split(',').map((g: string) => g.trim().toLowerCase());
-        return groups.includes(studentGroup);
-      });
+      examList = sanitizedExams.filter((exam) => isExamAllowedForStudent(exam, studentGroup));
     } else {
       // Guest / unauthenticated visitor: only public exams ("Tất cả")
-      examList = sanitizedExams.filter((exam) => {
-        const target = String(exam.questions?.target_group || '').toLowerCase().trim();
-        return !target || target === 'tất cả' || target === 'all' || target.includes('tất cả');
-      });
+      examList = sanitizedExams.filter((exam) => isExamAllowedForStudent(exam, 'Khách'));
     }
 
     // 3. Sanitize student records (strip password field from students map)
@@ -857,10 +849,8 @@ app.get('/api/exams/:id', (req, res) => {
 
   if (!isTeacher && user && user.role === 'student') {
     const studentGroup = String(user.group || '').toLowerCase().trim();
-    const target = String(exam.questions?.target_group || '').toLowerCase().trim();
-    const isAllowed = !target || target === 'tất cả' || target === 'all' || target.split(',').map((g: string) => g.trim().toLowerCase()).includes(studentGroup);
-    if (!isAllowed) {
-      return res.status(403).json({ success: false, error: `Bài thi này chỉ dành cho lớp ${exam.questions?.target_group}` });
+    if (!isExamAllowedForStudent(exam, studentGroup)) {
+      return res.status(403).json({ success: false, error: 'Đề thi này không thuộc khối lớp hoặc nhóm học tập của bạn.' });
     }
   }
 

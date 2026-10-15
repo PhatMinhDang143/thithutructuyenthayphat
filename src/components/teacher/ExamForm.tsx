@@ -10,6 +10,7 @@ import { PdfViewer } from '../common/PdfViewer';
 import { uploadPdfToGoogleDrive, getApiUrl, getLocalExams, getAuthHeaders } from '../../services/storageService';
 import { QuickAnswerModal } from './QuickAnswerModal';
 import { downloadSampleExcelTemplate } from '../../utils/answerParser';
+import { extractGradeFromExam, extractGradeFromClass } from '../../utils/gradeUtils';
 
 function parseFlexibleAnswers(rawAnswers: any): { p1: AnswerKeyPart1; p2: AnswerKeyPart2; p3: AnswerKeyPart3 } {
   if (!rawAnswers) return { p1: {}, p2: {}, p3: {} };
@@ -680,47 +681,92 @@ export const ExamForm: React.FC<ExamFormProps> = ({
               Tính năng phân lớp: Học sinh thuộc lớp được chọn mới nhìn thấy và làm bài thi này.
             </p>
 
-            {/* Quick Class Selection Chips */}
-            <div>
-              <label className="block text-[11px] font-black text-[#111111] mb-2 uppercase">
-                Chọn Nhanh Lớp Học Cho Đề Thi:
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTargetGroup('Tất cả')}
-                  className={`px-3 py-1.5 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
-                    targetGroup.toLowerCase().includes('tất cả')
-                      ? 'bg-[#FFC93C] text-[#111111] shadow-[2px_2px_0px_#111111]'
-                      : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
-                  }`}
-                >
-                  Tất Cả Các Lớp
-                </button>
+            {/* Quick Grade & Class Selection Chips */}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-black text-[#111111] mb-1.5 uppercase">
+                  1. Chọn Nhanh Theo Khối Lớp:
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTargetGroup('Tất cả')}
+                    className={`px-3 py-1.5 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
+                      targetGroup.toLowerCase() === 'tất cả' || targetGroup === ''
+                        ? 'bg-[#FFC93C] text-[#111111] shadow-[2px_2px_0px_#111111]'
+                        : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
+                    }`}
+                  >
+                    Tất Cả Các Lớp
+                  </button>
 
-                {availableClasses
-                  .filter((c) => c !== 'Tất cả')
-                  .map((clsName) => {
-                    const isSelected = targetGroup
-                      .split(',')
-                      .map((s) => s.trim().toLowerCase())
-                      .includes(clsName.toLowerCase());
+                  <button
+                    type="button"
+                    onClick={() => setTargetGroup('Khối 12')}
+                    className={`px-3 py-1.5 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
+                      targetGroup.toLowerCase() === 'khối 12'
+                        ? 'bg-[#4D6BFE] text-white shadow-[2px_2px_0px_#111111]'
+                        : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
+                    }`}
+                  >
+                    Toàn Khối 12
+                  </button>
 
-                    return (
-                      <button
-                        key={clsName}
-                        type="button"
-                        onClick={() => handleToggleClass(clsName)}
-                        className={`px-3 py-1.5 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
-                          isSelected
-                            ? 'bg-[#4D6BFE] text-white shadow-[2px_2px_0px_#111111]'
-                            : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
-                        }`}
-                      >
-                        Lớp {clsName}
-                      </button>
-                    );
-                  })}
+                  <button
+                    type="button"
+                    onClick={() => setTargetGroup('Khối 11')}
+                    className={`px-3 py-1.5 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
+                      targetGroup.toLowerCase() === 'khối 11'
+                        ? 'bg-[#FF8A00] text-white shadow-[2px_2px_0px_#111111]'
+                        : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
+                    }`}
+                  >
+                    Toàn Khối 11
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTargetGroup('Khối 10')}
+                    className={`px-3 py-1.5 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
+                      targetGroup.toLowerCase() === 'khối 10'
+                        ? 'bg-[#0F9D58] text-white shadow-[2px_2px_0px_#111111]'
+                        : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
+                    }`}
+                  >
+                    Toàn Khối 10
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-black text-[#111111] mb-1.5 uppercase">
+                  2. Hoặc Chọn Từng Lớp Cụ Thể:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {availableClasses
+                    .filter((c) => c !== 'Tất cả' && !c.toLowerCase().includes('khối'))
+                    .map((clsName) => {
+                      const isSelected = targetGroup
+                        .split(',')
+                        .map((s) => s.trim().toLowerCase())
+                        .includes(clsName.toLowerCase());
+
+                      return (
+                        <button
+                          key={clsName}
+                          type="button"
+                          onClick={() => handleToggleClass(clsName)}
+                          className={`px-2.5 py-1 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
+                            isSelected
+                              ? 'bg-[#4D6BFE] text-white shadow-[2px_2px_0px_#111111]'
+                              : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
+                          }`}
+                        >
+                          Lớp {clsName}
+                        </button>
+                      );
+                    })}
+                </div>
               </div>
             </div>
 
@@ -733,9 +779,40 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                 value={targetGroup}
                 onChange={(e) => setTargetGroup(e.target.value)}
                 className="w-full p-2.5 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs text-[#111111] font-black outline-none"
-                placeholder="VD: 12A1, 12A2"
+                placeholder="VD: 12A1, 12A2 hoặc Khối 11"
               />
             </div>
+
+            {/* Real-time Grade Detection & Scope Notice */}
+            {(() => {
+              const detected = extractGradeFromExam({ title, questions: { target_group: targetGroup } });
+              return (
+                <div className="p-3 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase text-neutral-800 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#0F9D58] animate-pulse"></span>
+                      Phạm vi đối tượng hiển thị:
+                    </span>
+                    <span className={`text-[10px] font-black px-2 py-0.5 border border-[#111111] ${
+                      detected === 12
+                        ? 'bg-[#4D6BFE] text-white'
+                        : detected === 11
+                        ? 'bg-[#FF8A00] text-white'
+                        : detected === 10
+                        ? 'bg-[#0F9D58] text-white'
+                        : 'bg-[#111111] text-white'
+                    }`}>
+                      {detected ? `Khối ${detected}` : 'Chung Toàn Trường'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-neutral-600 font-bold leading-relaxed">
+                    {detected
+                      ? `🎯 Chỉ học sinh thuộc Khối ${detected} mới nhìn thấy đề này. Học sinh các khối khác (ví dụ tài khoản lớp ${detected === 11 ? '12' : '11'}) sẽ tự động được ẩn hoàn toàn!`
+                      : '📢 Đề thi này mở chung cho học sinh toàn trường nếu không chỉ định mã lớp cụ thể.'}
+                  </p>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Exam Structure */}

@@ -4,6 +4,7 @@ import { ExamForm } from './ExamForm';
 import { FilePlus, Edit, Trash2, Clock, Users, FileText, Calendar, Sparkles, BarChart2, Lock, Unlock, Megaphone, Zap, CheckCircle2 } from 'lucide-react';
 import { saveExamData, deleteExamData, getLocalHistory } from '../../services/storageService';
 import { QuestionAnalyticsModal } from './QuestionAnalyticsModal';
+import { extractGradeFromExam, getExamGradeBadge } from '../../utils/gradeUtils';
 
 interface ExamsMainProps {
   exams: ExamItem[];
@@ -16,6 +17,7 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh,
   const [editingExam, setEditingExam] = useState<ExamItem | null | 'new'>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedExamForAnalytics, setSelectedExamForAnalytics] = useState<string | null>(null);
+  const [gradeFilter, setGradeFilter] = useState<'all' | '12' | '11' | '10' | 'general'>('all');
 
   if (editingExam !== null) {
     return (
@@ -84,13 +86,28 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh,
 
   const safeHistory = history || getLocalHistory() || [];
 
+  const k12Count = exams.filter((ex) => extractGradeFromExam(ex) === 12).length;
+  const k11Count = exams.filter((ex) => extractGradeFromExam(ex) === 11).length;
+  const k10Count = exams.filter((ex) => extractGradeFromExam(ex) === 10).length;
+  const generalCount = exams.filter((ex) => extractGradeFromExam(ex) === null).length;
+
+  const filteredExams = exams.filter((ex) => {
+    if (gradeFilter === 'all') return true;
+    const grade = extractGradeFromExam(ex);
+    if (gradeFilter === '12') return grade === 12;
+    if (gradeFilter === '11') return grade === 11;
+    if (gradeFilter === '10') return grade === 10;
+    if (gradeFilter === 'general') return grade === null;
+    return true;
+  });
+
   return (
     <div className="space-y-6 text-[#111111]">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 border-3 border-[#111111] shadow-[6px_6px_0px_#111111] gap-4">
         <div>
           <h2 className="text-xl md:text-2xl font-black uppercase text-[#111111]">Kho Đề Thi & Phân Quyền Lớp</h2>
           <p className="text-xs md:text-sm text-neutral-700 font-bold mt-0.5">
-            Quản lý danh sách đề thi, cài đặt ma trận câu hỏi, chọn lớp và quản lý công bố điểm đồng loạt.
+            Quản lý danh sách đề thi, lọc theo khối 10/11/12, cài đặt ma trận câu hỏi và công bố điểm.
           </p>
         </div>
         <button
@@ -101,12 +118,37 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh,
         </button>
       </div>
 
+      {/* Grade Filter Tabs */}
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          { key: 'all', label: `Tất Cả (${exams.length})` },
+          { key: '12', label: `Khối 12 (${k12Count})` },
+          { key: '11', label: `Khối 11 (${k11Count})` },
+          { key: '10', label: `Khối 10 (${k10Count})` },
+          { key: 'general', label: `Chung Toàn Trường (${generalCount})` },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setGradeFilter(tab.key as any)}
+            className={`px-3 py-1.5 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
+              gradeFilter === tab.key
+                ? 'bg-[#111111] text-white shadow-[2px_2px_0px_#111111]'
+                : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {exams.map((ex) => {
+        {filteredExams.map((ex) => {
           const cfg = ex.questions || {};
           const targetGroup = cfg.target_group || 'Tất cả';
           const isManualMode = cfg.publish_score_mode === 'manual' || ex.publish_score_mode === 'manual';
           const isScoreReleased = cfg.score_released === true || ex.score_released === true;
+          const gradeBadge = getExamGradeBadge(ex);
           
           // Count submissions for this exam
           const examSubmissions = safeHistory.filter((h) => {
@@ -123,9 +165,14 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh,
               <div>
                 {/* Badges */}
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                  <span className="bg-[#FDF6E9] text-[#111111] px-2.5 py-1 text-[11px] font-black border-2 border-[#111111] shadow-[2px_2px_0px_#111111] flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-[#4D6BFE]" /> {ex.duration} Phút
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`px-2.5 py-1 text-[11px] font-black border-2 border-[#111111] shadow-[2px_2px_0px_#111111] ${gradeBadge.color}`}>
+                      {gradeBadge.label}
+                    </span>
+                    <span className="bg-[#FDF6E9] text-[#111111] px-2.5 py-1 text-[11px] font-black border-2 border-[#111111] shadow-[2px_2px_0px_#111111] flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-[#4D6BFE]" /> {ex.duration} Phút
+                    </span>
+                  </div>
 
                   <span className="bg-[#4D6BFE] text-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] px-2.5 py-1 text-[11px] font-black flex items-center gap-1 truncate max-w-[140px]">
                     <Users className="w-3.5 h-3.5" /> Lớp: {targetGroup}
