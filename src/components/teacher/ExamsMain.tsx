@@ -145,7 +145,11 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh,
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {filteredExams.map((ex) => {
           const cfg = ex.questions || {};
-          const targetGroup = cfg.target_group || 'Tất cả';
+          const targetGroup = cfg.target_group ||
+            (Array.isArray((ex as any).assigned_classes) && (ex as any).assigned_classes.length > 0 ? (ex as any).assigned_classes.join(', ') : '') ||
+            (ex as any).target_group ||
+            'Tất cả';
+          const examDuration = Math.max(1, Number(ex.duration) || Number((ex as any).time_limit_minutes) || (typeof (ex as any).description === 'number' ? (ex as any).description : 0) || Number(cfg.duration) || 45);
           const isManualMode = cfg.publish_score_mode === 'manual' || ex.publish_score_mode === 'manual';
           const isScoreReleased = cfg.score_released === true || ex.score_released === true;
           const gradeBadge = getExamGradeBadge(ex);
@@ -170,7 +174,7 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh,
                       {gradeBadge.label}
                     </span>
                     <span className="bg-[#FDF6E9] text-[#111111] px-2.5 py-1 text-[11px] font-black border-2 border-[#111111] shadow-[2px_2px_0px_#111111] flex items-center gap-1">
-                      <Clock className="w-3.5 h-3.5 text-[#4D6BFE]" /> {ex.duration} Phút
+                      <Clock className="w-3.5 h-3.5 text-[#4D6BFE]" /> {examDuration} Phút
                     </span>
                   </div>
 
@@ -263,7 +267,22 @@ export const ExamsMain: React.FC<ExamsMainProps> = ({ exams, classes, onRefresh,
 
               <div className="flex gap-2 border-t-2 border-[#111111] pt-4 mt-6">
                 <button
-                  onClick={() => setEditingExam(ex)}
+                  onClick={() => {
+                    const normalized: ExamItem = {
+                      ...ex,
+                      duration: examDuration,
+                      time_limit_minutes: examDuration,
+                      description: examDuration,
+                      target_group: targetGroup,
+                      assigned_classes: targetGroup === 'Tất cả' ? [] : targetGroup.split(',').map((s) => s.trim()).filter(Boolean),
+                      questions: {
+                        ...cfg,
+                        duration: examDuration,
+                        target_group: targetGroup,
+                      },
+                    };
+                    setEditingExam(normalized);
+                  }}
                   className="flex-1 py-3 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] border-2 border-[#111111] shadow-[3px_3px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px] font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
                   <Edit className="w-3.5 h-3.5" /> Sửa & Phân Lớp

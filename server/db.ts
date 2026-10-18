@@ -116,12 +116,30 @@ function normalizeStore(rawObj: any): ServerStore {
             questions = JSON.parse(item.file_url);
           } catch (e) {}
         }
+        if (!questions || typeof questions !== 'object') {
+          questions = {};
+        }
         const rawDur = Number(item.duration) || Number(item.time_limit_minutes) || (typeof item.description === 'number' ? item.description : 0) || Number(questions?.duration) || 45;
+        const durNum = Math.max(1, rawDur);
+        questions.duration = durNum;
+        let tg = questions.target_group;
+        if (!tg && Array.isArray(item.assigned_classes) && item.assigned_classes.length > 0) {
+          tg = item.assigned_classes.join(', ');
+        }
+        if (!tg && item.target_group) {
+          tg = String(item.target_group);
+        }
+        questions.target_group = tg || 'Tất cả';
+
         store.exams.push({
           ...item,
           id: examId,
-          duration: Math.max(1, rawDur),
-          questions: questions || item.questions,
+          duration: durNum,
+          time_limit_minutes: durNum,
+          description: durNum,
+          target_group: questions.target_group,
+          assigned_classes: (questions.target_group === 'Tất cả' ? [] : questions.target_group.split(',').map((s: string) => s.trim()).filter(Boolean)),
+          questions: questions,
         });
       }
     }

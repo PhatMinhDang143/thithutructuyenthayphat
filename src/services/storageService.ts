@@ -771,21 +771,47 @@ export const saveExamData = async (
 
     examPayload.answers = finalAnswers;
 
+    const targetGroup = examPayload.questions?.target_group || examPayload.target_group || 'Tất cả';
+    const durNum = Math.max(1, Number(examPayload.duration) || Number((examPayload as any).time_limit_minutes) || 45);
+    const assignedArr = targetGroup === 'Tất cả' ? [] : targetGroup.split(',').map((s) => s.trim()).filter(Boolean);
+
     localExams[idx] = {
       ...existing,
       ...examPayload,
       updatedAt: now,
-      duration: Number(examPayload.duration) || 45,
+      duration: durNum,
+      time_limit_minutes: durNum,
+      description: durNum,
+      target_group: targetGroup,
+      assigned_classes: assignedArr,
       answers: finalAnswers,
       questions: {
         ...(existing.questions || {}),
         ...(examPayload.questions || {}),
+        duration: durNum,
+        target_group: targetGroup,
         file_link: finalFileLink,
         explain_link: finalExplainLink,
       },
     };
   } else {
-    localExams.unshift(examPayload);
+    const targetGroup = examPayload.questions?.target_group || examPayload.target_group || 'Tất cả';
+    const durNum = Math.max(1, Number(examPayload.duration) || Number((examPayload as any).time_limit_minutes) || 45);
+    const assignedArr = targetGroup === 'Tất cả' ? [] : targetGroup.split(',').map((s) => s.trim()).filter(Boolean);
+    localExams.unshift({
+      ...examPayload,
+      updatedAt: now,
+      duration: durNum,
+      time_limit_minutes: durNum,
+      description: durNum,
+      target_group: targetGroup,
+      assigned_classes: assignedArr,
+      questions: {
+        ...(examPayload.questions || {}),
+        duration: durNum,
+        target_group: targetGroup,
+      },
+    });
   }
 
   safeSetItem(STORAGE_KEYS.EXAMS, JSON.stringify(localExams));
@@ -826,7 +852,19 @@ export const saveExamData = async (
 
   if (apiUrl) {
     try {
-      const cloudPayload = { ...examPayload, duration: Number(examPayload.duration) || 45, updatedAt: now };
+      const assignedArr = examPayload.questions?.target_group
+        ? examPayload.questions.target_group.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : [];
+      const cloudPayload: any = {
+        ...examPayload,
+        duration: Number(examPayload.duration) || 45,
+        time_limit_minutes: Number(examPayload.duration) || 45,
+        description: Number(examPayload.duration) || 45,
+        assigned_classes: assignedArr,
+        target_group: examPayload.questions?.target_group || 'Tất cả',
+        file_url: JSON.stringify(examPayload.questions || {}),
+        updatedAt: now,
+      };
       if (cloudPayload.questions?.file_link?.startsWith('data:')) {
         cloudPayload.questions = {
           ...cloudPayload.questions,
@@ -1611,7 +1649,7 @@ function getExamsData(ss) {
   if (rows.length <= 1) return [];
 
   var headerRow = rows[0] || [];
-  var colId = -1, colTitle = -1, colDuration = -1, colQuestions = -1, colAnswers = -1;
+  var colId = -1, colTitle = -1, colDuration = -1, colTimeLimit = -1, colDesc = -1, colQuestions = -1, colAnswers = -1, colClasses = -1;
 
   for (var c = 0; c < headerRow.length; c++) {
     var h = String(headerRow[c] || '').toLowerCase().trim();
@@ -1619,17 +1657,24 @@ function getExamsData(ss) {
       colId = c;
     } else if (colTitle === -1 && (h.indexOf('title') > -1 || h.indexOf('tên') > -1 || h.indexOf('tiêu đề') > -1 || h.indexOf('tieu de') > -1)) {
       colTitle = c;
-    } else if (colDuration === -1 && (h.indexOf('duration') > -1 || h.indexOf('thời gian') > -1 || h.indexOf('thoi gian') > -1 || h.indexOf('phút') > -1 || h.indexOf('time') > -1 || h.indexOf('limit') > -1)) {
+    } else if (colDuration === -1 && (h === 'duration' || h.indexOf('thời gian') > -1 || h.indexOf('thoi gian') > -1 || h.indexOf('phút') > -1)) {
       colDuration = c;
+    } else if (colTimeLimit === -1 && (h.indexOf('time_limit') > -1 || h.indexOf('limit') > -1)) {
+      colTimeLimit = c;
+    } else if (colDesc === -1 && (h.indexOf('desc') > -1 || h.indexOf('mô tả') > -1)) {
+      colDesc = c;
     } else if (colQuestions === -1 && (h.indexOf('question') > -1 || h.indexOf('cấu hình') > -1 || h.indexOf('cau hinh') > -1 || h.indexOf('file') > -1 || h.indexOf('link') > -1)) {
       colQuestions = c;
     } else if (colAnswers === -1 && (h.indexOf('answer') > -1 || h.indexOf('đáp án') > -1 || h.indexOf('dap an') > -1)) {
       colAnswers = c;
+    } else if (colClasses === -1 && (h.indexOf('class') > -1 || h.indexOf('lớp') > -1 || h.indexOf('lop') > -1 || h.indexOf('nhóm') > -1 || h.indexOf('target') > -1 || h.indexOf('assigned') > -1)) {
+      colClasses = c;
     }
   }
 
   if (colId === -1) colId = 0;
   if (colTitle === -1) colTitle = 1;
+  if (colDuration === -1 && colTimeLimit > -1) colDuration = colTimeLimit;
   if (colDuration === -1) colDuration = 2;
   if (colQuestions === -1) colQuestions = 3;
   if (colAnswers === -1) colAnswers = 4;
@@ -1641,16 +1686,50 @@ function getExamsData(ss) {
       try {
         var qObj = {};
         if (colQuestions > -1 && r[colQuestions]) {
-          try { qObj = typeof r[colQuestions] === 'string' ? JSON.parse(r[colQuestions]) : r[colQuestions]; } catch(e) {}
+          try {
+            qObj = typeof r[colQuestions] === 'string' ? JSON.parse(r[colQuestions]) : r[colQuestions];
+          } catch(e) {
+            if (typeof r[colQuestions] === 'string' && r[colQuestions].indexOf('http') > -1) {
+              qObj = { file_link: r[colQuestions] };
+            }
+          }
         }
+        if (!qObj || typeof qObj !== 'object') qObj = {};
+
         var ansObj = colAnswers > -1 ? parseAnswersFromSheet(r[colAnswers]) : { p1: {}, p2: {}, p3: {} };
-        var rawDur = colDuration > -1 ? Number(r[colDuration]) : 0;
-        var finalDur = rawDur || (qObj && Number(qObj.duration)) || 45;
+        
+        var rawDur = 0;
+        if (colDuration > -1 && Number(r[colDuration])) rawDur = Number(r[colDuration]);
+        if (!rawDur && colTimeLimit > -1 && Number(r[colTimeLimit])) rawDur = Number(r[colTimeLimit]);
+        if (!rawDur && colDesc > -1 && typeof r[colDesc] === 'number') rawDur = r[colDesc];
+        if (!rawDur && qObj && Number(qObj.duration)) rawDur = Number(qObj.duration);
+        var finalDur = Math.max(1, rawDur || 45);
+
+        var rawClasses = '';
+        if (colClasses > -1 && r[colClasses]) {
+          rawClasses = String(r[colClasses]).trim();
+          if (rawClasses.startsWith('[') && rawClasses.endsWith(']')) {
+            try {
+              var arr = JSON.parse(rawClasses);
+              if (Array.isArray(arr)) rawClasses = arr.join(', ');
+            } catch(e) {}
+          }
+        }
+
+        var targetGroup = qObj.target_group || rawClasses || 'Tất cả';
+        qObj.target_group = targetGroup;
+        qObj.duration = finalDur;
+
+        var assignedArr = targetGroup === 'Tất cả' ? [] : targetGroup.split(',').map(function(s){return s.trim();}).filter(Boolean);
 
         exams.push({
           id: String(r[colId]),
           title: String(r[colTitle] || ''),
-          duration: Math.max(1, finalDur),
+          duration: finalDur,
+          time_limit_minutes: finalDur,
+          description: finalDur,
+          target_group: targetGroup,
+          assigned_classes: assignedArr,
           questions: qObj,
           answers: ansObj
         });
@@ -1664,31 +1743,70 @@ function saveExamToSheet(ss, exam) {
   if (!exam || !exam.id) return;
   var sheet = getExamSheet(ss);
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow(['ID', 'Title', 'Duration', 'Questions_JSON', 'Answers_JSON', 'Updated_At']);
+    sheet.appendRow(['ID', 'Title', 'Duration', 'Questions_JSON', 'Answers_JSON', 'Assigned_Classes', 'Updated_At']);
   }
   var data = sheet.getDataRange().getValues();
+  var headerRow = data[0] || [];
+  
+  var colId = -1, colTitle = -1, colDuration = -1, colTimeLimit = -1, colDesc = -1, colQuestions = -1, colAnswers = -1, colClasses = -1, colUpdated = -1;
+  for (var c = 0; c < headerRow.length; c++) {
+    var h = String(headerRow[c] || '').toLowerCase().trim();
+    if (colId === -1 && (h === 'id' || h.indexOf('mã') > -1)) colId = c;
+    else if (colTitle === -1 && (h.indexOf('title') > -1 || h.indexOf('tên') > -1 || h.indexOf('tiêu đề') > -1 || h.indexOf('tieu de') > -1)) colTitle = c;
+    else if (colDuration === -1 && (h === 'duration' || h.indexOf('thời gian') > -1 || h.indexOf('thoi gian') > -1 || h.indexOf('phút') > -1)) colDuration = c;
+    else if (colTimeLimit === -1 && (h.indexOf('time_limit') > -1 || h.indexOf('limit') > -1)) colTimeLimit = c;
+    else if (colDesc === -1 && (h.indexOf('desc') > -1 || h.indexOf('mô tả') > -1)) colDesc = c;
+    else if (colQuestions === -1 && (h.indexOf('question') > -1 || h.indexOf('cấu hình') > -1 || h.indexOf('cau hinh') > -1 || h.indexOf('file') > -1 || h.indexOf('link') > -1)) colQuestions = c;
+    else if (colAnswers === -1 && (h.indexOf('answer') > -1 || h.indexOf('đáp án') > -1 || h.indexOf('dap an') > -1)) colAnswers = c;
+    else if (colClasses === -1 && (h.indexOf('class') > -1 || h.indexOf('lớp') > -1 || h.indexOf('lop') > -1 || h.indexOf('nhóm') > -1 || h.indexOf('target') > -1 || h.indexOf('assigned') > -1)) colClasses = c;
+    else if (colUpdated === -1 && (h.indexOf('update') > -1 || h.indexOf('ngày') > -1 || h.indexOf('thời điểm') > -1)) colUpdated = c;
+  }
+
+  if (colId === -1) colId = 0;
+  if (colTitle === -1) colTitle = 1;
+  if (colDuration === -1 && colTimeLimit > -1) colDuration = colTimeLimit;
+  if (colDuration === -1) colDuration = 2;
+  if (colQuestions === -1) colQuestions = 3;
+  if (colAnswers === -1) colAnswers = 4;
+
   var foundRow = -1;
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(exam.id)) {
+    if (String(data[i][colId]) === String(exam.id)) {
       foundRow = i + 1;
       break;
     }
   }
-  
-  var durationVal = Math.max(1, Number(exam.duration) || 45);
-  var rowValues = [
-    String(exam.id),
-    String(exam.title || ''),
-    durationVal,
-    JSON.stringify(exam.questions || {}),
-    JSON.stringify(exam.answers || {}),
-    new Date().toLocaleString('vi-VN')
-  ];
-  
+
+  var durationVal = Math.max(1, Number(exam.duration) || Number(exam.time_limit_minutes) || (exam.questions && Number(exam.questions.duration)) || 45);
+  var targetGroupStr = (exam.questions && exam.questions.target_group) || exam.target_group || (Array.isArray(exam.assigned_classes) ? exam.assigned_classes.join(', ') : 'Tất cả');
+  if (!exam.questions || typeof exam.questions !== 'object') exam.questions = {};
+  exam.questions.duration = durationVal;
+  exam.questions.target_group = targetGroupStr;
+  var nowStr = new Date().toLocaleString('vi-VN');
+
   if (foundRow > 0) {
-    sheet.getRange(foundRow, 1, 1, rowValues.length).setValues([rowValues]);
+    sheet.getRange(foundRow, colId + 1).setValue(String(exam.id));
+    sheet.getRange(foundRow, colTitle + 1).setValue(String(exam.title || ''));
+    if (colDuration > -1) sheet.getRange(foundRow, colDuration + 1).setValue(durationVal);
+    if (colTimeLimit > -1) sheet.getRange(foundRow, colTimeLimit + 1).setValue(durationVal);
+    if (colDesc > -1 && typeof data[foundRow - 1][colDesc] === 'number') sheet.getRange(foundRow, colDesc + 1).setValue(durationVal);
+    if (colQuestions > -1) sheet.getRange(foundRow, colQuestions + 1).setValue(JSON.stringify(exam.questions || {}));
+    if (colAnswers > -1) sheet.getRange(foundRow, colAnswers + 1).setValue(JSON.stringify(exam.answers || {}));
+    if (colClasses > -1) sheet.getRange(foundRow, colClasses + 1).setValue(targetGroupStr);
+    if (colUpdated > -1) sheet.getRange(foundRow, colUpdated + 1).setValue(nowStr);
   } else {
-    sheet.appendRow(rowValues);
+    var totalCols = Math.max(headerRow.length, 6);
+    var newRow = new Array(totalCols);
+    for (var k = 0; k < totalCols; k++) newRow[k] = '';
+    newRow[colId] = String(exam.id);
+    newRow[colTitle] = String(exam.title || '');
+    if (colDuration > -1) newRow[colDuration] = durationVal;
+    if (colTimeLimit > -1) newRow[colTimeLimit] = durationVal;
+    if (colQuestions > -1) newRow[colQuestions] = JSON.stringify(exam.questions || {});
+    if (colAnswers > -1) newRow[colAnswers] = JSON.stringify(exam.answers || {});
+    if (colClasses > -1) newRow[colClasses] = targetGroupStr;
+    if (colUpdated > -1) newRow[colUpdated] = nowStr;
+    sheet.appendRow(newRow);
   }
 }
 

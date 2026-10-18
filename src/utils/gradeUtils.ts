@@ -36,7 +36,10 @@ export function extractGradeFromExam(exam?: { title?: string; questions?: any; f
       cfg = JSON.parse(exam.file_url);
     } catch {}
   }
-  const targetGroup = String(cfg?.target_group || '').toLowerCase().trim();
+  let targetGroup = String(cfg?.target_group || (exam as any).target_group || '').toLowerCase().trim();
+  if (!targetGroup && Array.isArray((exam as any).assigned_classes) && (exam as any).assigned_classes.length > 0) {
+    targetGroup = (exam as any).assigned_classes.join(', ').toLowerCase().trim();
+  }
 
   // 1. Kiểm tra target_group trước (nếu giáo viên gán chỉ định Khối 10/11/12)
   if (targetGroup) {
@@ -119,7 +122,10 @@ export function isExamAllowedForStudent(exam: any, userGroup?: string): boolean 
     } catch {}
   }
 
-  const targetGroup = String(cfg?.target_group || '').toLowerCase().trim();
+  let targetGroup = String(cfg?.target_group || (exam as any).target_group || '').toLowerCase().trim();
+  if (!targetGroup && Array.isArray((exam as any).assigned_classes) && (exam as any).assigned_classes.length > 0) {
+    targetGroup = (exam as any).assigned_classes.join(', ').toLowerCase().trim();
+  }
   const studentGrade = extractGradeFromClass(groupStr);
   const examGrade = extractGradeFromExam(exam);
 

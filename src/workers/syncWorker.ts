@@ -76,10 +76,12 @@ self.onmessage = async (event: MessageEvent<SyncWorkerRequest>) => {
     userRole,
     localExams = [],
     localStudents = {},
-    localHistory = [],
+    localHistory: inputHistory = [],
     initialClasses = [],
     initialExams = [],
   } = event.data;
+
+  let localHistory = [...(inputHistory || [])];
 
   try {
     const localExamsMap = new Map<string, ExamItem>();
@@ -91,6 +93,38 @@ self.onmessage = async (event: MessageEvent<SyncWorkerRequest>) => {
     let gasExams: ExamItem[] = [];
     let gasStudents: { [username: string]: StudentAccount } = {};
     let gasHistory: ExamSubmission[] = [];
+
+    // 0. Fetch trực tiếp từ Express backend /api/all (Đồng bộ đa trình duyệt tức thì)
+    try {
+      const sRes = await fetch(`/api/all?role=${encodeURIComponent(userRole || 'student')}`, {
+        cache: 'no-cache',
+      });
+      if (sRes.ok) {
+        const sData = await safeFetchJson(sRes);
+        const central = sData?.data;
+        if (central) {
+          if (Array.isArray(central.exams)) {
+            central.exams.forEach((ex: any) => {
+              if (ex && ex.id) {
+                const local = localExamsMap.get(ex.id);
+                if (!local || !local.updatedAt || (ex.updatedAt && ex.updatedAt > local.updatedAt)) {
+                  localExamsMap.set(ex.id, ex);
+                }
+              }
+            });
+          }
+          if (central.students && typeof central.students === 'object') {
+            Object.assign(localStudents, central.students);
+          }
+          if (Array.isArray(central.history)) {
+            const histMap = new Map();
+            localHistory.forEach((h: any) => { if (h && h.id) histMap.set(h.id, h); });
+            central.history.forEach((h: any) => { if (h && h.id) histMap.set(h.id, h); });
+            localHistory = Array.from(histMap.values());
+          }
+        }
+      }
+    } catch (e) {}
 
     // Fetch trực tiếp từ Google Apps Script Web App trong luồng Worker
     if (apiUrl) {
@@ -145,7 +179,7 @@ self.onmessage = async (event: MessageEvent<SyncWorkerRequest>) => {
       if (ex && ex.id) combinedMap.set(ex.id, ex);
     });
 
-    gasExams.forEach((gEx) => {
+    gasExams.forEach((gEx: any) => {
       if (!gEx || !gEx.id) return;
       const local = localExamsMap.get(gEx.id);
       const existingFileLink = local?.questions?.file_link;
@@ -156,6 +190,45 @@ self.onmessage = async (event: MessageEvent<SyncWorkerRequest>) => {
       } else if (!finalFile && existingFileLink) {
         finalFile = existingFileLink;
       }
+
+      // 1. Phục hồi questions config nếu gEx lưu trong file_url hoặc thiếu
+      let gasQuestions = gEx.questions;
+      if (!gasQuestions && gEx.file_url && typeof gEx.file_url === 'string' && gEx.file_url.startsWith('{')) {
+        try {
+          gasQuestions = JSON.parse(gEx.file_url);
+        } catch (e) {}
+      }
+      if (!gasQuestions || typeof gasQuestions !== 'object') {
+        gasQuestions = {};
+      }
+
+      // 2. Trích xuất duration từ mọi thuộc tính có thể có (duration, time_limit_minutes, description, questions.duration)
+      const gasDurationNum =
+        Number(gEx.duration) ||
+        Number(gEx.time_limit_minutes) ||
+        (typeof gEx.description === 'number' ? gEx.description : 0) ||
+        Number(gasQuestions.duration) ||
+        0;
+
+      // 3. Trích xuất target_group từ mọi định dạng (questions.target_group, assigned_classes array, target_group string)
+      let gasTargetGroup = gasQuestions.target_group || '';
+      if (!gasTargetGroup && Array.isArray(gEx.assigned_classes) && gEx.assigned_classes.length > 0) {
+        gasTargetGroup = gEx.assigned_classes.join(', ');
+      }
+      if (!gasTargetGroup && gEx.target_group) {
+        gasTargetGroup = String(gEx.target_group);
+      }
+
+      // 4. Bảo vệ dữ liệu cục bộ mới cập nhật (nếu giáo viên vừa sửa tại máy này)
+      const isLocalNewer = Boolean(local?.updatedAt && local.updatedAt > (gEx.updatedAt || 0));
+
+      const finalDuration = (isLocalNewer && local?.duration)
+        ? local.duration
+        : (gasDurationNum > 0 ? gasDurationNum : (local?.duration || 45));
+
+      const finalTargetGroup = (isLocalNewer && local?.questions?.target_group)
+        ? local.questions.target_group
+        : (gasTargetGroup || local?.questions?.target_group || 'Tất cả');
 
       const existingEntry = combinedMap.get(gEx.id) || local;
       const gHasAnswers =
@@ -175,14 +248,27 @@ self.onmessage = async (event: MessageEvent<SyncWorkerRequest>) => {
         ? existingEntry?.answers
         : gEx.answers || existingEntry?.answers;
 
+      const mergedQuestions = {
+        ...(local?.questions || {}),
+        ...gasQuestions,
+        target_group: finalTargetGroup,
+        file_link: finalFile,
+      };
+
+      if (isLocalNewer && local?.questions) {
+        if (local.questions.max_attempts !== undefined) mergedQuestions.max_attempts = local.questions.max_attempts;
+        if (local.questions.start_time !== undefined) mergedQuestions.start_time = local.questions.start_time;
+        if (local.questions.end_time !== undefined) mergedQuestions.end_time = local.questions.end_time;
+        if (local.questions.publish_score_mode) mergedQuestions.publish_score_mode = local.questions.publish_score_mode;
+        if (local.questions.score_released !== undefined) mergedQuestions.score_released = local.questions.score_released;
+      }
+
       combinedMap.set(gEx.id, {
         ...gEx,
-        duration: Number(gEx.duration) || 45,
+        duration: Math.max(1, finalDuration),
         answers: resolvedGasAnswers,
-        questions: {
-          ...(gEx.questions || {}),
-          file_link: finalFile,
-        },
+        questions: mergedQuestions,
+        updatedAt: Math.max(Number(gEx.updatedAt) || 0, Number(local?.updatedAt) || 0),
       });
     });
 

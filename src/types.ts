@@ -16,6 +16,7 @@ export interface ExamQuestionsConfig {
   file_link?: string; // Google Drive PDF view/preview URL or uploaded base64 data
   explain_link?: string;
   target_group?: string; // Lớp/Nhóm được phép làm bài (e.g. "Tất cả", "12A1", "12A1, 12A2")
+  duration?: number;
   max_attempts?: number; // Số lần làm bài tối đa (0 hoặc undefined = không giới hạn, 1 = 1 lần, 2 = 2 lần,...)
   publish_score_mode?: 'instant' | 'manual'; // 'instant': Công bố điểm ngay sau khi làm xong, 'manual': Chờ giáo viên xác nhận chấm đồng loạt
   score_released?: boolean; // true nếu giáo viên đã bấm công bố điểm đồng loạt cho đề này
@@ -48,6 +49,10 @@ export interface ExamItem {
   id: string;
   title: string;
   duration: number; // in minutes
+  time_limit_minutes?: number;
+  description?: string | number;
+  target_group?: string;
+  assigned_classes?: string[];
   questions: ExamQuestionsConfig;
   answers?: AnswerKeys; // Protected: Stripped on server for students, provided only for teachers or inside graded submissions
   updatedAt?: number; // epoch timestamp in ms

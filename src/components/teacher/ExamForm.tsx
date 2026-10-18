@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ExamItem, AnswerKeyPart1, AnswerKeyPart2, AnswerKeyPart3 } from '../../types';
 import { 
   FilePlus, Save, Loader2, UploadCloud, Clock, Timer, Users, Layers, 
@@ -41,6 +41,26 @@ function formatForDateTimeInput(val?: string): string {
   return str.replace(' ', 'T').slice(0, 16);
 }
 
+function extractExamDuration(data?: any): number {
+  if (!data) return 45;
+  const d = Number(data.duration) ||
+            Number(data.time_limit_minutes) ||
+            (typeof data.description === 'number' ? data.description : 0) ||
+            Number(data.questions?.duration) ||
+            45;
+  return Math.max(1, d);
+}
+
+function extractExamTargetGroup(data?: any): string {
+  if (!data) return 'Tất cả';
+  if (data.questions?.target_group) return data.questions.target_group;
+  if (Array.isArray(data.assigned_classes) && data.assigned_classes.length > 0) {
+    return data.assigned_classes.join(', ');
+  }
+  if (data.target_group) return String(data.target_group);
+  return 'Tất cả';
+}
+
 interface ExamFormProps {
   initialData: ExamItem | null;
   availableClasses: string[];
@@ -55,7 +75,7 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   onCancel,
 }) => {
   const [title, setTitle] = useState(initialData?.title || '');
-  const [duration, setDuration] = useState<number>(initialData?.duration ? Number(initialData.duration) : 45);
+  const [duration, setDuration] = useState<number>(() => extractExamDuration(initialData));
   const [examType, setExamType] = useState<'fixed' | 'custom'>(initialData?.questions?.exam_type || 'fixed');
 
   const [numP1, setNumP1] = useState(initialData?.questions?.num_p1 ?? 12);
@@ -63,7 +83,8 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   const [numP3, setNumP3] = useState(initialData?.questions?.num_p3 ?? 6);
 
   // TARGET CLASS SELECTION FEATURE (Lớp được phép làm bài)
-  const [targetGroup, setTargetGroup] = useState(initialData?.questions?.target_group || 'Tất cả');
+  const [targetGroup, setTargetGroup] = useState<string>(() => extractExamTargetGroup(initialData));
+  const [newCustomClass, setNewCustomClass] = useState('');
 
   // MAX ATTEMPTS / RETRY LIMIT FEATURE (Số lần làm bài tối đa)
   const [maxAttempts, setMaxAttempts] = useState<number>(
@@ -118,12 +139,12 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   useEffect(() => {
     if (initialData) {
       setTitle(initialData.title || '');
-      setDuration(Number(initialData.duration) || 45);
+      setDuration(extractExamDuration(initialData));
       setExamType(initialData.questions?.exam_type || 'fixed');
       setNumP1(initialData.questions?.num_p1 ?? 12);
       setNumP2(initialData.questions?.num_p2 ?? 4);
       setNumP3(initialData.questions?.num_p3 ?? 6);
-      setTargetGroup(initialData.questions?.target_group || 'Tất cả');
+      setTargetGroup(extractExamTargetGroup(initialData));
       setMaxAttempts(initialData.questions?.max_attempts !== undefined ? Number(initialData.questions.max_attempts) : 0);
       setPublishScoreMode(initialData.questions?.publish_score_mode || initialData.publish_score_mode || 'instant');
       setScoreReleased(
@@ -327,21 +348,48 @@ export const ExamForm: React.FC<ExamFormProps> = ({
     setIsNewFileUpload(false);
   };
 
+  const allClassChips = useMemo(() => {
+    const set = new Set<string>();
+    // Common default classes
+    ['12A1', '12A2', '12A3', '12B', '11A', '11B', '11B1', '10C1'].forEach((c) => set.add(c));
+    // Add classes from availableClasses prop
+    (availableClasses || []).forEach((c) => {
+      const trimmed = c.trim();
+      if (trimmed && trimmed.toLowerCase() !== 'tất cả' && !trimmed.toLowerCase().startsWith('khối')) {
+        set.add(trimmed);
+      }
+    });
+    // Add any classes already present in targetGroup
+    targetGroup.split(',').forEach((c) => {
+      const trimmed = c.trim();
+      if (trimmed && trimmed.toLowerCase() !== 'tất cả' && !trimmed.toLowerCase().startsWith('khối')) {
+        set.add(trimmed);
+      }
+    });
+    return Array.from(set);
+  }, [availableClasses, targetGroup]);
+
   const handleToggleClass = (clsName: string) => {
-    if (clsName === 'Tất cả') {
+    const cleanCls = clsName.trim();
+    if (!cleanCls || cleanCls.toLowerCase() === 'tất cả') {
       setTargetGroup('Tất cả');
       return;
     }
 
+    // Khi chọn từng lớp cụ thể: Tự động loại bỏ nhãn chung 'Tất cả' hoặc 'Khối 12/11/10'
     let currentArray = targetGroup
       .split(',')
       .map((s) => s.trim())
-      .filter((s) => s && s.toLowerCase() !== 'tất cả');
+      .filter((s) => s && s.toLowerCase() !== 'tất cả' && !s.toLowerCase().startsWith('khối'));
 
-    if (currentArray.includes(clsName)) {
-      currentArray = currentArray.filter((s) => s !== clsName);
+    const existingIdx = currentArray.findIndex(
+      (s) => s.toLowerCase() === cleanCls.toLowerCase()
+    );
+
+    if (existingIdx >= 0) {
+      currentArray.splice(existingIdx, 1);
     } else {
-      currentArray.push(clsName);
+      currentArray.push(cleanCls);
     }
 
     if (currentArray.length === 0) {
@@ -349,6 +397,13 @@ export const ExamForm: React.FC<ExamFormProps> = ({
     } else {
       setTargetGroup(currentArray.join(', '));
     }
+  };
+
+  const handleAddCustomClass = () => {
+    const clean = newCustomClass.trim();
+    if (!clean) return;
+    handleToggleClass(clean);
+    setNewCustomClass('');
   };
 
   // Determine active PDF url for preview & validation
@@ -429,16 +484,24 @@ export const ExamForm: React.FC<ExamFormProps> = ({
       }
     }
 
+    const finalTargetGroup = targetGroup.trim() || 'Tất cả';
+    const assignedArr = finalTargetGroup === 'Tất cả' ? [] : finalTargetGroup.split(',').map((s) => s.trim()).filter(Boolean);
+
     const payload: ExamItem & { clearAnswers?: boolean } = {
       id: initialData?.id || 'ex_' + Date.now(),
       title: title.trim(),
       duration: durationNum,
+      time_limit_minutes: durationNum,
+      description: durationNum,
+      target_group: finalTargetGroup,
+      assigned_classes: assignedArr,
       questions: {
         exam_type: examType,
         num_p1: Number(numP1),
         num_p2: Number(numP2),
         num_p3: Number(numP3),
-        target_group: targetGroup.trim() || 'Tất cả',
+        target_group: finalTargetGroup,
+        duration: durationNum,
         max_attempts: Number(maxAttempts) || 0,
         start_time: startTime,
         end_time: endTime,
@@ -727,11 +790,69 @@ export const ExamForm: React.FC<ExamFormProps> = ({
               Tính năng phân lớp: Học sinh thuộc lớp được chọn mới nhìn thấy và làm bài thi này.
             </p>
 
-            {/* Quick Grade & Class Selection Chips */}
+            {/* Active Class Assignment Status Banner */}
+            <div className="p-3 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="text-[10px] font-bold text-neutral-500 uppercase block">Trạng thái phân quyền đề thi:</span>
+                <span className="text-xs sm:text-sm font-black text-[#4D6BFE] uppercase flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-[#4D6BFE]" />
+                  {targetGroup.toLowerCase() === 'tất cả' || targetGroup === '' ? 'Mở cho Toàn Trường (Tất cả học sinh)' : `Chỉ định riêng: ${targetGroup}`}
+                </span>
+              </div>
+              {targetGroup.toLowerCase() !== 'tất cả' && targetGroup !== '' && (
+                <button
+                  type="button"
+                  onClick={() => setTargetGroup('Tất cả')}
+                  className="px-2.5 py-1 text-[11px] font-black bg-[#E63946] text-white border-2 border-[#111111] shadow-[1px_1px_0px_#111111] hover:bg-[#c92a37] uppercase transition-all"
+                >
+                  Xóa & Đặt Lại Tất Cả
+                </button>
+              )}
+            </div>
+
+            {/* Quick Grade & Class Selection Controls */}
             <div className="space-y-3">
+              {/* Dropdown Quick Selector */}
+              <div>
+                <label className="block text-[11px] font-black text-[#111111] mb-1 uppercase">
+                  1. Chọn Nhanh Từ Menu Danh Sách Lớp:
+                </label>
+                <select
+                  value={
+                    targetGroup.toLowerCase() === 'tất cả' || targetGroup === ''
+                      ? 'Tất cả'
+                      : ['Khối 12', 'Khối 11', 'Khối 10'].includes(targetGroup)
+                      ? targetGroup
+                      : allClassChips.includes(targetGroup)
+                      ? targetGroup
+                      : '__custom__'
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val !== '__custom__') {
+                      setTargetGroup(val);
+                    }
+                  }}
+                  className="w-full p-2.5 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs font-black text-[#111111] outline-none"
+                >
+                  <option value="Tất cả">Tất Cả Các Lớp (Toàn trường)</option>
+                  <option value="Khối 12">Toàn Khối 12 (Tất cả học sinh lớp 12)</option>
+                  <option value="Khối 11">Toàn Khối 11 (Tất cả học sinh lớp 11)</option>
+                  <option value="Khối 10">Toàn Khối 10 (Tất cả học sinh lớp 10)</option>
+                  <optgroup label="Chỉ định riêng từng lớp cụ thể:">
+                    {allClassChips.map((c) => (
+                      <option key={c} value={c}>
+                        Riêng Lớp {c}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <option value="__custom__">Tùy biến nhiều lớp / Nhóm riêng...</option>
+                </select>
+              </div>
+
               <div>
                 <label className="block text-[11px] font-black text-[#111111] mb-1.5 uppercase">
-                  1. Chọn Nhanh Theo Khối Lớp:
+                  2. Hoặc Bấm Nhanh Theo Khối:
                 </label>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -784,77 +905,103 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-black text-[#111111] mb-1.5 uppercase">
-                  2. Hoặc Chọn Từng Lớp Cụ Thể:
+              <div className="pt-2 border-t border-neutral-300">
+                <label className="block text-[11px] font-black text-[#111111] mb-1.5 uppercase flex items-center justify-between">
+                  <span>3. Hoặc Click Chỉ Định Từng Lớp Riêng (Click để chọn/bỏ chọn):</span>
+                  <span className="text-[10px] text-neutral-500 font-bold lowercase">(chỉ các lớp được chọn mới thấy đề)</span>
                 </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {availableClasses
-                    .filter((c) => c !== 'Tất cả' && !c.toLowerCase().includes('khối'))
-                    .map((clsName) => {
-                      const isSelected = targetGroup
-                        .split(',')
-                        .map((s) => s.trim().toLowerCase())
-                        .includes(clsName.toLowerCase());
+                <div className="flex flex-wrap gap-1.5 mb-2.5">
+                  {allClassChips.map((clsName) => {
+                    const isSelected = targetGroup
+                      .split(',')
+                      .map((s) => s.trim().toLowerCase())
+                      .includes(clsName.toLowerCase());
 
-                      return (
-                        <button
-                          key={clsName}
-                          type="button"
-                          onClick={() => handleToggleClass(clsName)}
-                          className={`px-2.5 py-1 text-xs font-black uppercase transition-all border-2 border-[#111111] ${
-                            isSelected
-                              ? 'bg-[#4D6BFE] text-white shadow-[2px_2px_0px_#111111]'
-                              : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
-                          }`}
-                        >
-                          Lớp {clsName}
-                        </button>
-                      );
-                    })}
+                    return (
+                      <button
+                        key={clsName}
+                        type="button"
+                        onClick={() => handleToggleClass(clsName)}
+                        className={`px-2.5 py-1 text-xs font-black uppercase transition-all border-2 border-[#111111] flex items-center gap-1 ${
+                          isSelected
+                            ? 'bg-[#4D6BFE] text-white shadow-[2px_2px_0px_#111111]'
+                            : 'bg-white text-[#111111] hover:bg-[#FDF6E9]'
+                        }`}
+                      >
+                        {isSelected && <span>✓</span>}
+                        <span>Lớp {clsName}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Inline Add Custom Class */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newCustomClass}
+                    onChange={(e) => setNewCustomClass(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddCustomClass();
+                      }
+                    }}
+                    placeholder="Thêm mã lớp riêng khác (VD: 12B, 12Tin, 11A)..."
+                    className="flex-1 p-2 bg-white border-2 border-[#111111] text-xs font-bold text-[#111111] outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCustomClass}
+                    className="px-3 py-2 bg-[#FFC93C] hover:bg-[#ffd460] text-[#111111] font-black text-xs uppercase border-2 border-[#111111] shadow-[2px_2px_0px_#111111] active:translate-x-[1px] active:translate-y-[1px]"
+                  >
+                    + Thêm Lớp
+                  </button>
                 </div>
               </div>
             </div>
 
-            <div>
+            <div className="pt-2 border-t border-neutral-300">
               <label className="block text-[11px] font-bold text-neutral-700 mb-1">
-                Hoặc Nhập Tên Lớp Chỉ Định Cụ Thể (Phân cách bằng dấu phẩy):
+                Chuỗi danh sách lớp đang gán (bạn có thể gõ trực tiếp):
               </label>
               <input
                 type="text"
                 value={targetGroup}
                 onChange={(e) => setTargetGroup(e.target.value)}
                 className="w-full p-2.5 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-xs text-[#111111] font-black outline-none"
-                placeholder="VD: 12A1, 12A2 hoặc Khối 11"
+                placeholder="VD: 12B hoặc 12A1, 12B hoặc Khối 12"
               />
             </div>
 
-            {/* Real-time Grade Detection & Scope Notice */}
+            {/* Real-time Grade & Class Detection Notice */}
             {(() => {
-              const detected = extractGradeFromExam({ title, questions: { target_group: targetGroup } });
+              const tgClean = targetGroup.trim();
+              const isAll = !tgClean || tgClean.toLowerCase() === 'tất cả';
+              const isGradeAll = tgClean.toLowerCase().startsWith('khối');
               return (
                 <div className="p-3 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-black uppercase text-neutral-800 flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-[#0F9D58] animate-pulse"></span>
-                      Phạm vi đối tượng hiển thị:
+                      Phạm vi học sinh được làm bài:
                     </span>
                     <span className={`text-[10px] font-black px-2 py-0.5 border border-[#111111] ${
-                      detected === 12
+                      isAll
+                        ? 'bg-[#111111] text-white'
+                        : isGradeAll
                         ? 'bg-[#4D6BFE] text-white'
-                        : detected === 11
-                        ? 'bg-[#FF8A00] text-white'
-                        : detected === 10
-                        ? 'bg-[#0F9D58] text-white'
-                        : 'bg-[#111111] text-white'
+                        : 'bg-[#FF8A00] text-white'
                     }`}>
-                      {detected ? `Khối ${detected}` : 'Chung Toàn Trường'}
+                      {isAll ? 'Toàn Trường' : isGradeAll ? targetGroup : `Lớp Riêng: ${targetGroup}`}
                     </span>
                   </div>
-                  <p className="text-[11px] text-neutral-600 font-bold leading-relaxed">
-                    {detected
-                      ? `🎯 Chỉ học sinh thuộc Khối ${detected} mới nhìn thấy đề này. Học sinh các khối khác (ví dụ tài khoản lớp ${detected === 11 ? '12' : '11'}) sẽ tự động được ẩn hoàn toàn!`
-                      : '📢 Đề thi này mở chung cho học sinh toàn trường nếu không chỉ định mã lớp cụ thể.'}
+                  <p className="text-[11px] text-neutral-700 font-bold leading-relaxed">
+                    {isAll
+                      ? '📢 Mọi học sinh trong trường đều thấy và làm bài thi này.'
+                      : isGradeAll
+                      ? `🎯 Chỉ học sinh thuộc ${targetGroup} mới thấy bài thi này. Các khối khác bị ẩn hoàn toàn.`
+                      : `🔒 CHỈ RIÊNG học sinh thuộc các lớp [${targetGroup}] mới thấy và được thi đề này! Tất cả các lớp khác và các khối khác đều bị chặn.`}
                   </p>
                 </div>
               );

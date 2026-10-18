@@ -746,14 +746,37 @@ app.get('/api/all', (req, res) => {
   let studentsList: Record<string, any> = {};
   let historyList: any[] = [];
 
+  const normalizedExams = store.exams.map((ex: any) => {
+    const rawDur = Number(ex.duration) || Number(ex.time_limit_minutes) || (typeof ex.description === 'number' ? ex.description : 0) || Number(ex.questions?.duration) || 45;
+    const durNum = Math.max(1, rawDur);
+    const q = ex.questions && typeof ex.questions === 'object' ? { ...ex.questions } : {};
+    q.duration = durNum;
+    let tg = q.target_group;
+    if (!tg && Array.isArray(ex.assigned_classes) && ex.assigned_classes.length > 0) {
+      tg = ex.assigned_classes.join(', ');
+    }
+    if (!tg && ex.target_group) {
+      tg = String(ex.target_group);
+    }
+    q.target_group = tg || 'Tất cả';
+    return {
+      ...ex,
+      duration: durNum,
+      time_limit_minutes: durNum,
+      target_group: q.target_group,
+      assigned_classes: (q.target_group === 'Tất cả' ? [] : q.target_group.split(',').map((s: string) => s.trim()).filter(Boolean)),
+      questions: q,
+    };
+  });
+
   if (isTeacher) {
     // Teachers receive full authoritative data (including answers and student accounts)
-    examList = store.exams;
+    examList = normalizedExams;
     studentsList = store.students;
     historyList = store.history;
   } else {
     // 1. Sanitize exams (completely strip answer keys)
-    const sanitizedExams = store.exams.map(sanitizeExamForStudent);
+    const sanitizedExams = normalizedExams.map(sanitizeExamForStudent);
 
     // 2. Filter exams based on student grade/group or guest scope
     // Triệt tiêu lỗi: đề Khối 11 hiển thị trên tài khoản học sinh Khối 12
@@ -870,9 +893,21 @@ app.post('/api/exams/save', requireTeacherAuth, async (req, res) => {
 
     const updatedExam = await executeTransaction(async (store) => {
       const now = Date.now();
+      const durNum = Math.max(1, Number(examPayload.duration) || Number(examPayload.time_limit_minutes) || 45);
+      const targetGroup = examPayload.questions?.target_group || examPayload.target_group || (Array.isArray(examPayload.assigned_classes) && examPayload.assigned_classes.length > 0 ? examPayload.assigned_classes.join(', ') : 'Tất cả');
+      const assignedArr = (targetGroup === 'Tất cả' ? [] : targetGroup.split(',').map((s: string) => s.trim()).filter(Boolean));
       const exam = {
         ...examPayload,
-        duration: Number(examPayload.duration) || 45,
+        duration: durNum,
+        time_limit_minutes: durNum,
+        description: durNum,
+        target_group: targetGroup,
+        assigned_classes: assignedArr,
+        questions: {
+          ...(examPayload.questions || {}),
+          duration: durNum,
+          target_group: targetGroup,
+        },
         updatedAt: now,
       };
 

@@ -100,7 +100,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
   // Exam Draft State & Auto Save
   const storageKey = `exam_draft_${exam.id}_${user.username}`;
   const initialDurationSeconds = useMemo(() => {
-    const rawDur = Math.max(1, Number(exam.duration) || 45);
+    const rawDur = Math.max(1, Number(exam.duration) || Number((exam as any).time_limit_minutes) || (typeof (exam as any).description === 'number' ? (exam as any).description : 0) || Number(exam.questions?.duration) || 45);
     const baseSeconds = rawDur * 60;
     if (exam.questions?.end_time) {
       const endEpoch = new Date(exam.questions.end_time).getTime();
@@ -218,7 +218,16 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
           if (parsed.ansPart3) setAnsPart3(parsed.ansPart3);
           if (parsed.flaggedQuestions) setFlaggedQuestions(parsed.flaggedQuestions);
           if (parsed.cheatCount) setCheatCount(parsed.cheatCount);
-          const timeToRestore = savedTime ? parseInt(savedTime, 10) : parsed.timeLeft;
+          let timeToRestore = savedTime ? parseInt(savedTime, 10) : parsed.timeLeft;
+          // Nếu đề thi vừa được giáo viên tăng thời lượng (ví dụ từ 45p lên 90p)
+          if (parsed.examDuration && parsed.examDuration !== exam.duration) {
+            const deltaSeconds = (exam.duration - parsed.examDuration) * 60;
+            timeToRestore = Math.max(1, timeToRestore + deltaSeconds);
+          } else if (!parsed.examDuration && initialDurationSeconds > 45 * 60 && timeToRestore <= 45 * 60) {
+            // Tự động bù giờ nếu bản nháp cũ lưu thời 45p mà giờ đề là 90p
+            timeToRestore += (initialDurationSeconds - 2700);
+          }
+
           if (timeToRestore > 0) setTimeLeft(Math.min(timeToRestore, initialDurationSeconds));
           if (parsed.examStartTime) examStartTimeRef.current = parsed.examStartTime;
           if (parsed.questionTimings) questionTimingsRef.current = parsed.questionTimings;
@@ -228,7 +237,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
         }
       } catch (e) {}
     }
-  }, [exam.id, user.username, storageKey]);
+  }, [exam.id, user.username, storageKey, exam.duration, initialDurationSeconds]);
 
   // Auto Save Answers Draft (Chỉ chạy JSON.stringify khi học sinh thay đổi đáp án, cắm cờ hoặc cảnh báo)
   useEffect(() => {
@@ -238,13 +247,14 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
       ansPart3, 
       flaggedQuestions, 
       cheatCount,
+      examDuration: exam.duration,
       examStartTime: examStartTimeRef.current,
       questionTimings: questionTimingsRef.current,
     };
     try {
       localStorage.setItem(storageKey, JSON.stringify(draftData));
     } catch (e) {}
-  }, [ansPart1, ansPart2, ansPart3, flaggedQuestions, cheatCount, storageKey]);
+  }, [ansPart1, ansPart2, ansPart3, flaggedQuestions, cheatCount, exam.duration, storageKey]);
 
   // Tách riêng việc lưu thời gian đếm ngược: Lưu số nguyên đơn thuần mỗi giây, triệt tiêu JSON.stringify toàn bộ phiếu trả lời
   useEffect(() => {

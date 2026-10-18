@@ -429,7 +429,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                         </div>
 
                         <span className="font-mono text-neutral-600 font-bold">
-                          {exam.duration} phút
+                          {Number(exam.duration) || Number((exam as any).time_limit_minutes) || Number(exam.questions?.duration) || 45} phút
                         </span>
                       </div>
 
