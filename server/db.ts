@@ -116,9 +116,11 @@ function normalizeStore(rawObj: any): ServerStore {
             questions = JSON.parse(item.file_url);
           } catch (e) {}
         }
+        const rawDur = Number(item.duration) || Number(item.time_limit_minutes) || (typeof item.description === 'number' ? item.description : 0) || Number(questions?.duration) || 45;
         store.exams.push({
           ...item,
           id: examId,
+          duration: Math.max(1, rawDur),
           questions: questions || item.questions,
         });
       }

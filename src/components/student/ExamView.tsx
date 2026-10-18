@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { AppUser, ExamItem, StudentAnswers, SubmissionTiming, QuestionTimingRecord } from '../../types';
 import { 
   Clock, Minimize2, Maximize2, User, Flag, Check, Edit3, X, 
@@ -99,7 +99,20 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
 
   // Exam Draft State & Auto Save
   const storageKey = `exam_draft_${exam.id}_${user.username}`;
-  const [timeLeft, setTimeLeft] = useState(exam.duration * 60);
+  const initialDurationSeconds = useMemo(() => {
+    const rawDur = Math.max(1, Number(exam.duration) || 45);
+    const baseSeconds = rawDur * 60;
+    if (exam.questions?.end_time) {
+      const endEpoch = new Date(exam.questions.end_time).getTime();
+      if (!isNaN(endEpoch)) {
+        const remainingSeconds = Math.max(0, Math.floor((endEpoch - Date.now()) / 1000));
+        return Math.min(baseSeconds, remainingSeconds);
+      }
+    }
+    return baseSeconds;
+  }, [exam.duration, exam.questions?.end_time]);
+
+  const [timeLeft, setTimeLeft] = useState(initialDurationSeconds);
   const [cheatCount, setCheatCount] = useState(0);
 
   // Secret Telemetry Timing (Teacher-only monitoring)
@@ -206,7 +219,7 @@ export const ExamView: React.FC<ExamViewProps> = ({ user, exam, onExamSubmit }) 
           if (parsed.flaggedQuestions) setFlaggedQuestions(parsed.flaggedQuestions);
           if (parsed.cheatCount) setCheatCount(parsed.cheatCount);
           const timeToRestore = savedTime ? parseInt(savedTime, 10) : parsed.timeLeft;
-          if (timeToRestore > 0) setTimeLeft(timeToRestore);
+          if (timeToRestore > 0) setTimeLeft(Math.min(timeToRestore, initialDurationSeconds));
           if (parsed.examStartTime) examStartTimeRef.current = parsed.examStartTime;
           if (parsed.questionTimings) questionTimingsRef.current = parsed.questionTimings;
         } else {

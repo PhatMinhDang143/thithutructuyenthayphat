@@ -29,6 +29,18 @@ function parseFlexibleAnswers(rawAnswers: any): { p1: AnswerKeyPart1; p2: Answer
   };
 }
 
+function formatForDateTimeInput(val?: string): string {
+  if (!val) return '';
+  const str = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(str)) return str;
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  return str.replace(' ', 'T').slice(0, 16);
+}
+
 interface ExamFormProps {
   initialData: ExamItem | null;
   availableClasses: string[];
@@ -68,8 +80,8 @@ export const ExamForm: React.FC<ExamFormProps> = ({
       : (initialData?.score_released !== undefined ? !!initialData.score_released : false)
   );
 
-  const [startTime, setStartTime] = useState(initialData?.questions?.start_time || '');
-  const [endTime, setEndTime] = useState(initialData?.questions?.end_time || '');
+  const [startTime, setStartTime] = useState(formatForDateTimeInput(initialData?.questions?.start_time));
+  const [endTime, setEndTime] = useState(formatForDateTimeInput(initialData?.questions?.end_time));
 
   // PDF Source State
   const initialFileLink = initialData?.questions?.file_link || '';
@@ -105,6 +117,35 @@ export const ExamForm: React.FC<ExamFormProps> = ({
   // Synchronize state when initialData changes or loads
   useEffect(() => {
     if (initialData) {
+      setTitle(initialData.title || '');
+      setDuration(Number(initialData.duration) || 45);
+      setExamType(initialData.questions?.exam_type || 'fixed');
+      setNumP1(initialData.questions?.num_p1 ?? 12);
+      setNumP2(initialData.questions?.num_p2 ?? 4);
+      setNumP3(initialData.questions?.num_p3 ?? 6);
+      setTargetGroup(initialData.questions?.target_group || 'Tất cả');
+      setMaxAttempts(initialData.questions?.max_attempts !== undefined ? Number(initialData.questions.max_attempts) : 0);
+      setPublishScoreMode(initialData.questions?.publish_score_mode || initialData.publish_score_mode || 'instant');
+      setScoreReleased(
+        initialData.questions?.score_released !== undefined
+          ? !!initialData.questions.score_released
+          : (initialData.score_released !== undefined ? !!initialData.score_released : false)
+      );
+      setStartTime(formatForDateTimeInput(initialData.questions?.start_time));
+      setEndTime(formatForDateTimeInput(initialData.questions?.end_time));
+      setExplainLink(initialData.questions?.explain_link || '');
+
+      const fl = initialData.questions?.file_link || '';
+      const isBase64 = fl.startsWith('data:application/pdf') || fl.startsWith('data:');
+      if (isBase64) {
+        setUploadFile({ name: 'File_PDF_Da_Luu.pdf', size: 'Đã lưu trong hệ thống', base64: fl });
+        setFileLink('');
+        setIsReplacingFile(false);
+      } else if (fl && fl !== '[PDF_STORED_IN_BROWSER]') {
+        setFileLink(fl);
+        setIsReplacingFile(false);
+      }
+
       const parsed = parseFlexibleAnswers(initialData.answers);
       const hasParsedAnswers =
         Object.keys(parsed.p1).length > 0 ||
@@ -472,14 +513,19 @@ export const ExamForm: React.FC<ExamFormProps> = ({
               </div>
               <input
                 type="number"
-                value={duration}
+                value={duration === 0 ? '' : duration}
                 onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  setDuration(isNaN(val) ? 0 : Math.max(1, val));
+                  const val = e.target.value === '' ? 0 : parseInt(e.target.value, 10);
+                  setDuration(isNaN(val) ? 0 : Math.max(0, Math.min(600, val)));
+                }}
+                onBlur={() => {
+                  if (!duration || duration <= 0) {
+                    setDuration(45);
+                  }
                 }}
                 required
                 min={1}
-                max={360}
+                max={600}
                 className="w-full p-3 bg-white border-2 border-[#111111] shadow-[2px_2px_0px_#111111] text-[#111111] outline-none text-sm font-black mb-2"
                 placeholder="Nhập số phút làm bài (VD: 45, 60, 90)..."
               />
@@ -877,7 +923,18 @@ export const ExamForm: React.FC<ExamFormProps> = ({
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-neutral-800 text-[11px] font-black mb-1 uppercase">Giờ Mở Đề</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-neutral-800 text-[11px] font-black uppercase">Giờ Mở Đề</label>
+                  {startTime && (
+                    <button
+                      type="button"
+                      onClick={() => setStartTime('')}
+                      className="text-[10px] text-[#E63946] hover:underline font-bold"
+                    >
+                      Xóa giờ
+                    </button>
+                  )}
+                </div>
                 <input
                   type="datetime-local"
                   value={startTime}
@@ -886,7 +943,18 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-neutral-800 text-[11px] font-black mb-1 uppercase">Giờ Đóng Đề</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-neutral-800 text-[11px] font-black uppercase">Giờ Đóng Đề</label>
+                  {endTime && (
+                    <button
+                      type="button"
+                      onClick={() => setEndTime('')}
+                      className="text-[10px] text-[#E63946] hover:underline font-bold"
+                    >
+                      Xóa giờ
+                    </button>
+                  )}
+                </div>
                 <input
                   type="datetime-local"
                   value={endTime}
@@ -895,6 +963,11 @@ export const ExamForm: React.FC<ExamFormProps> = ({
                 />
               </div>
             </div>
+            {startTime && endTime && new Date(endTime) <= new Date(startTime) && (
+              <p className="text-[11px] text-[#E63946] font-black bg-red-50 p-2 border border-[#E63946]">
+                ⚠️ Cảnh báo: Giờ đóng đề phải sau giờ mở đề!
+              </p>
+            )}
 
             {/* Section 4: File PDF Display / Upload */}
             {hasExistingFile && !isReplacingFile ? (

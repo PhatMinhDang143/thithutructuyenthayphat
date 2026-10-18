@@ -39,13 +39,47 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [selectedLeaderboardExamId, setSelectedLeaderboardExamId] = useState<string>('');
 
-  // Check schedule open window
+  // Check schedule open window with full validation of both start_time and end_time
+  const getExamScheduleStatus = (cfg?: ExamQuestionsConfig): {
+    isOpen: boolean;
+    reason: 'upcoming' | 'closed' | 'open';
+    label: string;
+    alertMessage: string;
+  } => {
+    if (!cfg) return { isOpen: true, reason: 'open', label: 'Đang mở', alertMessage: '' };
+    const now = Date.now();
+
+    if (cfg.start_time) {
+      const start = new Date(cfg.start_time).getTime();
+      if (!isNaN(start) && now < start) {
+        const startStr = cfg.start_time.replace('T', ' ');
+        return {
+          isOpen: false,
+          reason: 'upcoming',
+          label: 'Chưa Tới Giờ Mở',
+          alertMessage: `Đề thi chưa tới giờ mở làm bài! Thời gian mở đề dự kiến: ${startStr}`,
+        };
+      }
+    }
+
+    if (cfg.end_time) {
+      const end = new Date(cfg.end_time).getTime();
+      if (!isNaN(end) && now > end) {
+        const endStr = cfg.end_time.replace('T', ' ');
+        return {
+          isOpen: false,
+          reason: 'closed',
+          label: 'Đã Hết Hạn Nộp',
+          alertMessage: `Đề thi đã kết thúc thời gian nộp bài! Hạn chót là: ${endStr}`,
+        };
+      }
+    }
+
+    return { isOpen: true, reason: 'open', label: 'Đang mở', alertMessage: '' };
+  };
+
   const isExamOpen = (cfg: ExamQuestionsConfig): boolean => {
-    if (!cfg.start_time) return true;
-    const now = new Date().getTime();
-    const start = new Date(cfg.start_time).getTime();
-    const end = cfg.end_time ? new Date(cfg.end_time).getTime() : Infinity;
-    return now >= start && now <= end;
+    return getExamScheduleStatus(cfg).isOpen;
   };
 
   const safeExams = Array.isArray(exams) ? exams : [];
@@ -357,7 +391,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
             ) : visibleExams.length > 0 ? (
               visibleExams.map((exam) => {
                 const cfg = exam.questions || {};
-                const open = isExamOpen(cfg);
+                const scheduleStatus = getExamScheduleStatus(cfg);
+                const open = scheduleStatus.isOpen;
 
                 // Calculate user's attempts on this exam
                 const userAttempts = mySubmissions.filter((h) => {
@@ -440,6 +475,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                           </div>
                         )}
 
+                        {cfg.start_time && (
+                          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-200">
+                            <span className="text-neutral-600 font-bold">Giờ mở đề:</span>
+                            <span className="text-neutral-800 font-mono font-bold">{cfg.start_time.replace('T', ' ')}</span>
+                          </div>
+                        )}
                         {cfg.end_time && (
                           <div className="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-200">
                             <span className="text-[#E63946] font-bold">Hạn nộp bài:</span>
@@ -455,7 +496,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                         type="button"
                         onClick={() => {
                           if (!open) {
-                            alert('Đề thi chưa tới giờ mở hoặc đã kết thúc thời gian làm bài!');
+                            alert(scheduleStatus.alertMessage);
                             return;
                           }
                           if (isLimitExceeded) {
@@ -472,10 +513,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
                       >
                         {isLimitExceeded ? (
                           <>Đã Hết Lượt Thi ({attemptCount}/{maxAttempts})</>
-                        ) : open ? (
-                          <>{attemptCount > 0 ? 'Làm Lại Bài Thi' : 'Vào Làm Bài Ngay'}</>
+                        ) : !open ? (
+                          <>{scheduleStatus.label}</>
                         ) : (
-                          <>Chưa Mở / Đã Đóng</>
+                          <>{attemptCount > 0 ? 'Làm Lại Bài Thi' : 'Vào Làm Bài Ngay'}</>
                         )}
                       </button>
 

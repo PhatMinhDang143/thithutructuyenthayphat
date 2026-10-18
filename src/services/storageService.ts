@@ -1347,6 +1347,10 @@ function doGet(e) {
     };
     return createJsonResponse({ success: true, data: data });
   }
+
+  if (action === 'ping' || action === 'test') {
+    return createJsonResponse({ success: true, message: 'Google Apps Script đang hoạt động tốt!' });
+  }
   
   return createJsonResponse({ success: false, error: 'Hành động không hợp lệ: ' + action });
 }
@@ -1605,22 +1609,48 @@ function getExamsData(ss) {
   var sheet = getExamSheet(ss);
   var rows = sheet.getDataRange().getValues();
   if (rows.length <= 1) return [];
-  
+
+  var headerRow = rows[0] || [];
+  var colId = -1, colTitle = -1, colDuration = -1, colQuestions = -1, colAnswers = -1;
+
+  for (var c = 0; c < headerRow.length; c++) {
+    var h = String(headerRow[c] || '').toLowerCase().trim();
+    if (colId === -1 && (h === 'id' || h.indexOf('mã') > -1)) {
+      colId = c;
+    } else if (colTitle === -1 && (h.indexOf('title') > -1 || h.indexOf('tên') > -1 || h.indexOf('tiêu đề') > -1 || h.indexOf('tieu de') > -1)) {
+      colTitle = c;
+    } else if (colDuration === -1 && (h.indexOf('duration') > -1 || h.indexOf('thời gian') > -1 || h.indexOf('thoi gian') > -1 || h.indexOf('phút') > -1 || h.indexOf('time') > -1 || h.indexOf('limit') > -1)) {
+      colDuration = c;
+    } else if (colQuestions === -1 && (h.indexOf('question') > -1 || h.indexOf('cấu hình') > -1 || h.indexOf('cau hinh') > -1 || h.indexOf('file') > -1 || h.indexOf('link') > -1)) {
+      colQuestions = c;
+    } else if (colAnswers === -1 && (h.indexOf('answer') > -1 || h.indexOf('đáp án') > -1 || h.indexOf('dap an') > -1)) {
+      colAnswers = c;
+    }
+  }
+
+  if (colId === -1) colId = 0;
+  if (colTitle === -1) colTitle = 1;
+  if (colDuration === -1) colDuration = 2;
+  if (colQuestions === -1) colQuestions = 3;
+  if (colAnswers === -1) colAnswers = 4;
+
   var exams = [];
   for (var i = 1; i < rows.length; i++) {
     var r = rows[i];
-    if (r[0]) {
+    if (r[colId]) {
       try {
         var qObj = {};
-        if (r[3]) {
-          try { qObj = typeof r[3] === 'string' ? JSON.parse(r[3]) : r[3]; } catch(e) {}
+        if (colQuestions > -1 && r[colQuestions]) {
+          try { qObj = typeof r[colQuestions] === 'string' ? JSON.parse(r[colQuestions]) : r[colQuestions]; } catch(e) {}
         }
-        var ansObj = parseAnswersFromSheet(r[4]);
+        var ansObj = colAnswers > -1 ? parseAnswersFromSheet(r[colAnswers]) : { p1: {}, p2: {}, p3: {} };
+        var rawDur = colDuration > -1 ? Number(r[colDuration]) : 0;
+        var finalDur = rawDur || (qObj && Number(qObj.duration)) || 45;
 
         exams.push({
-          id: String(r[0]),
-          title: String(r[1] || ''),
-          duration: Number(r[2]) || 45,
+          id: String(r[colId]),
+          title: String(r[colTitle] || ''),
+          duration: Math.max(1, finalDur),
           questions: qObj,
           answers: ansObj
         });
@@ -1631,6 +1661,7 @@ function getExamsData(ss) {
 }
 
 function saveExamToSheet(ss, exam) {
+  if (!exam || !exam.id) return;
   var sheet = getExamSheet(ss);
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(['ID', 'Title', 'Duration', 'Questions_JSON', 'Answers_JSON', 'Updated_At']);
@@ -1644,7 +1675,7 @@ function saveExamToSheet(ss, exam) {
     }
   }
   
-  var durationVal = Number(exam.duration) || 45;
+  var durationVal = Math.max(1, Number(exam.duration) || 45);
   var rowValues = [
     String(exam.id),
     String(exam.title || ''),
